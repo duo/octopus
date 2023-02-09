@@ -1,0 +1,8 @@
+.vscode
+
+.DS_Store
+
+vendor/
+
+configure.yaml
+master.db

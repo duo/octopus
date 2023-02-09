@@ -1,0 +1,17 @@
+master:
+  api_url: http://10.0.0.10:8081 # Optional,
+  local_mode: true # Optional,
+  admin_id: # Telegram user id (administrator)
+  token:  1234567:xxxxxxxx # Required, Telegram bot token
+  archive: # Optional
+    - vendor: wechat # qq, wechat, etc
+      uid: wxid_xxxxxxx # client id
+      chat_id: 123456789 # Telegram supergroup id (topic enabled)
+
+service:
+  addr: 0.0.0.0:11111 # Required, listen address
+  secret: hello # Required,
+  send_timeout: 3m # Optional
+
+log:
+  level: info
