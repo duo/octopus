@@ -11,6 +11,9 @@ import (
 	"runtime/debug"
 	"strconv"
 
+	_ "image/jpeg"
+	_ "image/png"
+
 	"github.com/duo/octopus/internal/common"
 	"github.com/duo/octopus/internal/manager"
 
@@ -500,10 +503,14 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				html.EscapeString(link.Description),
 			)
 			if link.URL != "" {
+				source := html.EscapeString(link.Source)
+				if source == "" {
+					source = link.URL
+				}
 				text = fmt.Sprintf("%s\n\nvia <a href=\"%s\">%s</a>",
 					text,
 					link.URL,
-					html.EscapeString(link.Source),
+					source,
 				)
 			}
 			ms.bot.SendChatAction(chatID, "typing", nil)
@@ -813,6 +820,8 @@ func isSendAsFile(data []byte) bool {
 		if imgRatio >= imgSizeMaxRatio {
 			return true
 		}
+	} else {
+		log.Warnf("Deocde image(%s) failed: %v", mimetype.Detect(data), err)
 	}
 
 	return false

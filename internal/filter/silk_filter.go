@@ -2,7 +2,10 @@ package filter
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"os/exec"
 
@@ -41,14 +44,29 @@ func (f SilkFilter) Process(in *common.OctopusEvent) (*common.OctopusEvent, bool
 	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
 		if in.Type == common.EventAudio {
 			blob := in.Data.(*common.BlobData)
-			if blob.Mime == "audio/ogg" {
-				if data, err := ogg2silk(blob.Binary); err != nil {
-					log.Warnf("Failed to convert ogg to silk: %v", err)
+			if blob.Mime == "audio/ogg" { // from Telegram
+				if in.Vendor.Type == "qq" {
+					if data, err := ogg2silk(blob.Binary); err != nil {
+						log.Warnf("Failed to convert ogg to silk: %v", err)
+					} else {
+						blob.Mime = "audio/silk"
+						blob.Binary = data
+					}
 				} else {
-					blob.Mime = "audio/silk"
-					blob.Binary = data
+					if data, err := ogg2mp3(blob.Binary); err != nil {
+						log.Warnf("Failed to convert ogg to mp3: %v", err)
+					} else {
+						in.Type = common.EventFile
+						blob.Mime = "audio/mpeg"
+						blob.Binary = data
+
+						randBytes := make([]byte, 4)
+						rand.Read(randBytes)
+						blob.Name = fmt.Sprintf("VOICE_%s.mp3", hex.EncodeToString(randBytes))
+					}
 				}
 			} else {
+				// from QQ/WeChat
 				if data, err := silk2ogg(blob.Binary); err != nil {
 					log.Warnf("Failed to convert silk to ogg: %v", err)
 				} else {
@@ -152,4 +170,35 @@ func ogg2silk(rawData []byte) ([]byte, error) {
 	}
 
 	return silkData, nil
+}
+
+func ogg2mp3(rawData []byte) ([]byte, error) {
+	buf := bytes.NewBuffer(rawData)
+
+	cmd := exec.Command(
+		"ffmpeg", "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	io.Copy(stdin, buf)
+	stdin.Close()
+
+	outputBuf := &bytes.Buffer{}
+	io.Copy(outputBuf, stdout)
+
+	if err := cmd.Wait(); err != nil {
+		return nil, err
+	}
+
+	return outputBuf.Bytes(), nil
 }
