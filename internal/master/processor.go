@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"strings"
 
 	_ "image/jpeg"
 	_ "image/png"
@@ -273,8 +274,7 @@ func (ms *MasterService) transferMasterMessage(ctx *ext.Context, slaveLimb strin
 // process limb client event response
 func (ms *MasterService) transferCallback(rawMSg *gotgbot.Message, event *common.OctopusEvent, cbErr error) {
 	if cbErr != nil {
-		text := fmt.Sprintf("[FAIL]: %v", cbErr)
-		ms.replayLinkIssue(rawMSg, fmt.Sprintf("*%s*", common.EscapeText("Markdown", text)))
+		ms.replayLinkIssue(rawMSg, fmt.Sprintf("*[FAIL]: %s*", strings.NewReplacer("*", "\\*").Replace(cbErr.Error())))
 		return
 	}
 
@@ -317,6 +317,17 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 	}()
 
 	adminID := ms.config.Master.AdminID
+
+	// handle observe event
+	if event.Type == common.EventObserve {
+		ms.bot.SendMessage(
+			adminID,
+			fmt.Sprintf("*[INFO]: %s*", strings.NewReplacer("*", "\\*").Replace(event.Content)),
+			&gotgbot.SendMessageOpts{
+				ParseMode: "Markdown",
+			})
+		return
+	}
 
 	slaveLimb := common.Limb{
 		Type:   event.Vendor.Type,

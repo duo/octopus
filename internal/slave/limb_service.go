@@ -76,11 +76,14 @@ func (ls *LimbService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ls.observe(fmt.Sprintf("LimbClient(%s) connected", vendor))
+
 	lc := NewLimbClient(vendor, ls.config, conn, ls.out)
 	ls.clientsLock.Lock()
 	ls.clients[vendor] = lc
 	ls.clientsLock.Unlock()
 	lc.run(func() {
+		ls.observe(fmt.Sprintf("LimbClient(%s) disconnected", vendor))
 		ls.clientsLock.Lock()
 		delete(ls.clients, vendor)
 		ls.clientsLock.Unlock()
@@ -164,4 +167,13 @@ func (ls *LimbService) handleEvent(client *LimbClient, event *common.OctopusEven
 		event.Timestamp = resp.Timestamp
 		event.Callback(event, nil)
 	}
+}
+
+func (ls *LimbService) observe(msg string) {
+	go func() {
+		ls.out <- &common.OctopusEvent{
+			Type:    common.EventObserve,
+			Content: msg,
+		}
+	}()
 }

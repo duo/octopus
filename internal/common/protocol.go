@@ -252,6 +252,7 @@ const (
 	EventVoIP
 	EventSystem
 	EventSync
+	EventObserve
 )
 
 type MessageType int
@@ -325,6 +326,8 @@ func (t EventType) String() string {
 		return "system"
 	case EventSync:
 		return "sync"
+	case EventObserve:
+		return "observe"
 	default:
 		return "unknown"
 	}

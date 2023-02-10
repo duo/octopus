@@ -23,7 +23,7 @@ Set /setjoingroups Enable and /setprivacy Disable
 master:
   api_url: http://10.0.0.10:8081 # Optional, Telegram local bot api server
   local_mode: true # Optional, local server mode
-  admin_id: # Telegram user id (administrator)
+  admin_id: # Required, Telegram user id (administrator)
   token:  1234567:xxxxxxxx # Required, Telegram bot token
   archive: # Optional, archive client chat by topic
     - vendor: wechat # qq, wechat, etc
