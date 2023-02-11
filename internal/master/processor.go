@@ -173,7 +173,7 @@ func (ms *MasterService) transferMasterMessage(ctx *ext.Context, slaveLimb strin
 			masterLimb,
 			common.Itoa(rawMsg.ReplyToMessage.MessageId),
 		)
-		if err == nil && logMsg != nil {
+		if err == nil && logMsg != nil && logMsg.SlaveMsgID != "0" {
 			event.Reply = &common.ReplyInfo{
 				ID:        logMsg.SlaveMsgID,
 				Timestamp: logMsg.Timestamp,

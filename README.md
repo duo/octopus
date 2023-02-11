@@ -11,6 +11,11 @@ A Telegram bot bridge other IM (qq, wechat, etc.) conversations together.
 docker run -d -p 11111:11111 --name=octopus --restart=always -v octopus:/data lxduo/octopus:latest
 ```
 
+# Limbs
+* [octopus-qq](https://github.com/duo/octopus-qq)
+* [octopus-wechat](https://github.com/duo/octopus-wechat)
+* [octopus-wechat-web](https://github.com/duo/octopus-wechat-web)
+
 # Documentation
 
 ## Bot
