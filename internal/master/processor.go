@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"runtime/debug"
-	"strconv"
 	"strings"
 
 	_ "image/jpeg"
@@ -31,6 +30,12 @@ const (
 	imgSizeRatio    = 3.5
 	imgSizeMaxRatio = 10
 )
+
+type ChatInfo struct {
+	id       int64
+	threadID int64
+	title    string
+}
 
 // read events from limb
 func (ms *MasterService) handleSlaveLoop() {
@@ -63,14 +68,14 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 	if ctx.EffectiveChat.IsForum {
 		topicID := rawMsg.MessageThreadId
 		if topicID == 0 {
-			return ms.replayLinkIssue(rawMsg, "*No linked chat found.*")
+			return ms.replayLinkIssue(rawMsg, "*Chat on default topic not allowed.*")
 		} else {
 			if topic, err := manager.GetTopicByMaster(masterLimb, topicID); err != nil {
 				log.Warnf("Get topic by master failed: %v", err)
 				return err
 			} else {
 				if topic == nil {
-					return ms.replayLinkIssue(rawMsg, "*No linked chat found.*")
+					return ms.replayLinkIssue(rawMsg, "*No linked chat on topic found.*")
 				} else {
 					return ms.transferMasterMessage(ctx, topic.SlaveLimb)
 				}
@@ -82,7 +87,7 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 			return err
 		} else {
 			if len(links) == 0 {
-				return ms.replayLinkIssue(rawMsg, "*No linked chat found.*")
+				return ms.replayLinkIssue(rawMsg, "*No linked chat on group found.*")
 			} else if len(links) > 1 {
 				return ms.replayLinkIssue(rawMsg, "*Multiple linked chat found.*")
 			} else {
@@ -98,7 +103,7 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 			log.Warnf("Get message by master message id failed: %v", err)
 			return err
 		} else if logMsg == nil {
-			return ms.replayLinkIssue(rawMsg, "*No linked chat found.*")
+			return ms.replayLinkIssue(rawMsg, "*No linked chat by reply found.*")
 		} else {
 			return ms.transferMasterMessage(ctx, logMsg.SlaveLimb)
 		}
@@ -341,11 +346,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 		return
 	}
 
-	var chatIDs []int64
-	var title string
-	var messageThreadId int64 = 0
-
-	var replyMap = map[int64]int{}
+	var replyMap = map[int64]int64{}
 	// get reply map for quote and revoke
 	if event.Reply != nil {
 		messages, err := manager.GetMessagesBySlaveReply(slaveLimb, event.Reply)
@@ -364,7 +365,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				log.Warnf("Parse chatId(%v) failed: %v", limb.ChatID, err)
 				continue
 			}
-			masterMsgID, err := strconv.Atoi(m.MasterMsgID)
+			masterMsgID, err := common.Atoi(m.MasterMsgID)
 			if err != nil {
 				log.Warnf("Parse mastetMsgId(%v) failed: %v", m.MasterMsgID, err)
 				continue
@@ -372,6 +373,8 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			replyMap[chatID] = masterMsgID
 		}
 	}
+
+	chats := []*ChatInfo{}
 
 	if len(links) > 0 {
 		// find linked Telegram chat
@@ -386,130 +389,104 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				log.Warnf("Parse chatId(%v) failed: %v", limb.ChatID, err)
 				continue
 			}
-			chatIDs = append(chatIDs, chatID)
+			chat, err := ms.bot.GetChat(chatID, nil)
+			if err != nil {
+				log.Warnf("Failed to get chat(%d) info from Telegram: %v", chatID, err)
+				continue
+			}
+			if chat.IsForum {
+				chats = append(chats, ms.createForumChatInfo(chatID, event))
+			} else {
+				chats = append(chats, &ChatInfo{
+					id:    chatID,
+					title: fmt.Sprintf("%s:", displayName(&event.From)),
+				})
+			}
 		}
-
-		title = fmt.Sprintf("%s:", displayName(&event.From))
 	} else if chatID, ok := ms.archiveChats[event.Vendor.String()]; ok {
 		// find archive supergroup (topic enabled)
-		masterLimb := common.Limb{
-			Type:   "telegram",
-			UID:    common.Itoa(ms.config.Master.AdminID),
-			ChatID: common.Itoa(chatID),
-		}.String()
-		topic, err := manager.GetTopic(masterLimb, slaveLimb)
-		if err != nil {
-			log.Warnf("Failed to get topic: %v", err)
-		} else if topic == nil {
-			resp, err := ms.bot.CreateForumTopic(chatID, event.Chat.Title, &gotgbot.CreateForumTopicOpts{})
-			if err != nil {
-				log.Warnf("Failed to create topic: %v", err)
-			} else {
-				topic = &manager.Topic{
-					MasterLimb: masterLimb,
-					SlaveLimb:  slaveLimb,
-					TopicID:    common.Itoa(resp.MessageThreadId),
-				}
-				if err := manager.AddTopic(topic); err != nil {
-					log.Warnf("Failed to add topic: %v", err)
-				}
-			}
-		}
-
-		chatIDs = []int64{chatID}
-		if topic == nil {
-			if event.Chat.Type == "private" {
-				title = fmt.Sprintf("👤 %s:", displayName(&event.From))
-			} else {
-				title = fmt.Sprintf("👥 %s [%s]:",
-					displayName(&event.From),
-					event.Chat.Title)
-			}
-		} else {
-			topicID, _ := common.Atoi(topic.TopicID)
-			messageThreadId = topicID
-			title = fmt.Sprintf("%s:", displayName(&event.From))
-		}
+		chats = append(chats, ms.createForumChatInfo(chatID, event))
 	} else {
-		chatIDs = []int64{adminID}
-
+		var title string
 		if event.Chat.Type == "private" {
 			title = fmt.Sprintf("👤 %s:", displayName(&event.From))
 		} else {
-			title = fmt.Sprintf("👥 %s [%s]:",
-				displayName(&event.From),
-				event.Chat.Title)
+			title = fmt.Sprintf("👥 %s [%s]:", displayName(&event.From), event.Chat.Title)
 		}
+		chats = append(chats, &ChatInfo{
+			id:    chatID,
+			title: title,
+		})
 	}
 
-	for _, chatID := range chatIDs {
-		var replyToMessageID = 0
-		if val, ok := replyMap[chatID]; ok {
+	for _, chat := range chats {
+		var replyToMessageID int64 = 0
+		if val, ok := replyMap[chat.id]; ok {
 			replyToMessageID = val
 		}
 
 		switch event.Type {
 		case common.EventRevoke:
-			ms.bot.SendChatAction(chatID, "typing", nil)
+			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
-				chatID,
+				chat.id,
 				fmt.Sprintf(
 					"%s\n~%s~",
-					common.EscapeText("MarkdownV2", title),
+					common.EscapeText("MarkdownV2", chat.title),
 					common.EscapeText("MarkdownV2", event.Content),
 				),
 				&gotgbot.SendMessageOpts{
 					ParseMode:        "MarkdownV2",
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventText, common.EventSystem:
-			ms.bot.SendChatAction(chatID, "typing", nil)
+			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
-				chatID,
-				fmt.Sprintf("%s\n%s", title, event.Content),
+				chat.id,
+				fmt.Sprintf("%s\n%s", chat.title, event.Content),
 				&gotgbot.SendMessageOpts{
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventVoIP:
-			ms.bot.SendChatAction(chatID, "typing", nil)
+			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
-				chatID,
+				chat.id,
 				fmt.Sprintf(
 					"%s\n_%s_",
-					common.EscapeText("MarkdownV2", title),
+					common.EscapeText("MarkdownV2", chat.title),
 					common.EscapeText("MarkdownV2", event.Content),
 				),
 				&gotgbot.SendMessageOpts{
 					ParseMode:        "MarkdownV2",
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventLocation:
 			location := event.Data.(*common.LocationData)
 			resp, err := ms.bot.SendVenue(
-				chatID,
+				chat.id,
 				location.Latitude,
 				location.Longitude,
-				fmt.Sprintf("%s\n%s", title, location.Name),
+				fmt.Sprintf("%s\n%s", chat.title, location.Name),
 				location.Address,
 				&gotgbot.SendVenueOpts{
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventApp:
 			link := event.Data.(*common.AppData)
 			text := fmt.Sprintf("%s\n<u>%s</u>\n\n%s",
-				title,
+				chat.title,
 				html.EscapeString(link.Title),
 				html.EscapeString(link.Description),
 			)
@@ -524,38 +501,38 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					source,
 				)
 			}
-			ms.bot.SendChatAction(chatID, "typing", nil)
+			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
-				chatID,
+				chat.id,
 				text,
 				&gotgbot.SendMessageOpts{
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 					ParseMode:        "HTML",
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventAudio:
-			ms.bot.SendChatAction(chatID, "upload_voice", nil)
+			ms.bot.SendChatAction(chat.id, "upload_voice", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
 			resp, err := ms.bot.SendVoice(
-				chatID,
+				chat.id,
 				blob.Binary,
 				&gotgbot.SendVoiceOpts{
-					Caption:          title,
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					Caption:          chat.title,
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventVideo:
-			ms.bot.SendChatAction(chatID, "upload_video", nil)
+			ms.bot.SendChatAction(chat.id, "upload_video", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
 			//mime := mimetype.Detect(blob.Binary)
 			//fileName := fmt.Sprintf("%s%s", msg.ID, mime.Extension())
-			text := fmt.Sprintf("%s\n%s", title, event.Content)
+			text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
 			resp, err := ms.bot.SendVideo(
-				chatID,
+				chat.id,
 				//&gotgbot.NamedFile{
 				//	File:     bytes.NewReader(blob.Binary),
 				//	FileName: fileName,
@@ -563,70 +540,70 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				blob.Binary,
 				&gotgbot.SendVideoOpts{
 					Caption:          text,
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventFile:
-			ms.bot.SendChatAction(chatID, "upload_document", nil)
+			ms.bot.SendChatAction(chat.id, "upload_document", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
 			resp, err := ms.bot.SendDocument(
-				chatID,
+				chat.id,
 				&gotgbot.NamedFile{
 					File:     bytes.NewReader(blob.Binary),
 					FileName: blob.Name,
 				},
 				&gotgbot.SendDocumentOpts{
-					Caption:          title,
-					MessageThreadId:  messageThreadId,
-					ReplyToMessageId: int64(replyToMessageID),
+					Caption:          chat.title,
+					MessageThreadId:  chat.threadID,
+					ReplyToMessageId: replyToMessageID,
 				},
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventPhoto:
-			text := fmt.Sprintf("%s\n%s", title, event.Content)
+			text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
 			photos := event.Data.([]*common.BlobData)
 			if len(photos) == 1 {
 				photo := photos[0]
-				ms.bot.SendChatAction(chatID, "upload_photo", nil)
+				ms.bot.SendChatAction(chat.id, "upload_photo", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 				mime := mimetype.Detect(photo.Binary)
 				if mime.String() == "image/gif" {
 					resp, err := ms.bot.SendAnimation(
-						chatID,
+						chat.id,
 						&gotgbot.NamedFile{
 							File:     bytes.NewReader(photo.Binary),
 							FileName: photo.Name + ".gif",
 						},
 						&gotgbot.SendAnimationOpts{
 							Caption:          text,
-							MessageThreadId:  messageThreadId,
-							ReplyToMessageId: int64(replyToMessageID),
+							MessageThreadId:  chat.threadID,
+							ReplyToMessageId: replyToMessageID,
 						},
 					)
 					ms.logMessage(event, resp, err)
 				} else if isSendAsFile(photo.Binary) {
 					resp, err := ms.bot.SendDocument(
-						chatID,
+						chat.id,
 						&gotgbot.NamedFile{
 							File:     bytes.NewReader(photo.Binary),
 							FileName: photo.Name,
 						},
 						&gotgbot.SendDocumentOpts{
 							Caption:          text,
-							MessageThreadId:  messageThreadId,
-							ReplyToMessageId: int64(replyToMessageID),
+							MessageThreadId:  chat.threadID,
+							ReplyToMessageId: replyToMessageID,
 						},
 					)
 					ms.logMessage(event, resp, err)
 				} else {
 					resp, err := ms.bot.SendPhoto(
-						chatID,
+						chat.id,
 						photo.Binary,
 						&gotgbot.SendPhotoOpts{
 							Caption:          text,
-							MessageThreadId:  messageThreadId,
-							ReplyToMessageId: int64(replyToMessageID),
+							MessageThreadId:  chat.threadID,
+							ReplyToMessageId: replyToMessageID,
 						},
 					)
 					ms.logMessage(event, resp, err)
@@ -680,11 +657,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					})
 				}
 				resps, err := ms.bot.SendMediaGroup(
-					chatID,
+					chat.id,
 					mediaGroup,
 					&gotgbot.SendMediaGroupOpts{
-						MessageThreadId:  messageThreadId,
-						ReplyToMessageId: int64(replyToMessageID),
+						MessageThreadId:  chat.threadID,
+						ReplyToMessageId: replyToMessageID,
 					},
 				)
 				if err != nil {
@@ -766,6 +743,62 @@ func (ms *MasterService) replayLinkIssue(msg *gotgbot.Message, text string) erro
 		MessageThreadId: msg.MessageThreadId,
 	})
 	return err
+}
+
+func (ms *MasterService) createForumChatInfo(chatID int64, event *common.OctopusEvent) *ChatInfo {
+	masterLimb := common.Limb{
+		Type:   "telegram",
+		UID:    common.Itoa(ms.config.Master.AdminID),
+		ChatID: common.Itoa(chatID),
+	}.String()
+	slaveLimb := common.Limb{
+		Type:   event.Vendor.Type,
+		UID:    event.Vendor.UID,
+		ChatID: event.Chat.ID,
+	}.String()
+
+	topic := ms.getOrCreateTopic(chatID, event.Chat.Title, masterLimb, slaveLimb)
+	if topic == nil {
+		var title string
+		if event.Chat.Type == "private" {
+			title = fmt.Sprintf("👤 %s:", displayName(&event.From))
+		} else {
+			title = fmt.Sprintf("👥 %s [%s]:", displayName(&event.From), event.Chat.Title)
+		}
+		return &ChatInfo{
+			id:    chatID,
+			title: title,
+		}
+	} else {
+		topicID, _ := common.Atoi(topic.TopicID)
+		return &ChatInfo{
+			id:       chatID,
+			threadID: topicID,
+			title:    fmt.Sprintf("%s:", displayName(&event.From)),
+		}
+	}
+}
+
+func (ms *MasterService) getOrCreateTopic(chatID int64, title, masterLimb, slaveLimb string) *manager.Topic {
+	topic, err := manager.GetTopic(masterLimb, slaveLimb)
+	if err != nil {
+		log.Warnf("Failed to get topic: %v", err)
+	} else if topic == nil {
+		resp, err := ms.bot.CreateForumTopic(chatID, title, &gotgbot.CreateForumTopicOpts{})
+		if err != nil {
+			log.Warnf("Failed to create topic: %v", err)
+		} else {
+			topic = &manager.Topic{
+				MasterLimb: masterLimb,
+				SlaveLimb:  slaveLimb,
+				TopicID:    common.Itoa(resp.MessageThreadId),
+			}
+			if err := manager.AddTopic(topic); err != nil {
+				log.Warnf("Failed to add topic: %v", err)
+			}
+		}
+	}
+	return topic
 }
 
 func (ms *MasterService) download(fileID string) (*common.BlobData, error) {

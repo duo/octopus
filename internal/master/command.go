@@ -27,8 +27,14 @@ func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
 		)
 		return err
 	} else if strings.HasPrefix(text, "/link") {
-		if ctx.EffectiveChat.IsForum {
-			_, err := bot.SendMessage(ctx.EffectiveChat.Id, "Link in forum chat not support.", nil)
+		if ctx.EffectiveChat.IsForum && ctx.EffectiveMessage.MessageThreadId != 0 {
+			_, err := bot.SendMessage(
+				ctx.EffectiveChat.Id,
+				"Link in topic not support.",
+				&gotgbot.SendMessageOpts{
+					MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
+				},
+			)
 			return err
 		} else if ctx.EffectiveChat.Type == "private" {
 			_, err := bot.SendMessage(ctx.EffectiveChat.Id, "Link in private chat does not support.", nil)
@@ -57,7 +63,13 @@ func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
 
 		return handleChat(bot, ctx, ctx.Message.From.Id, cb)
 	} else {
-		_, err := bot.SendMessage(ctx.EffectiveChat.Id, "Command not support.", nil)
+		_, err := bot.SendMessage(
+			ctx.EffectiveChat.Id,
+			"Command not support.",
+			&gotgbot.SendMessageOpts{
+				MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
+			},
+		)
 		return err
 	}
 }
@@ -116,10 +128,11 @@ func handleChat(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) e
 		}.String()
 
 		if err := manager.AddMessage(&manager.Message{
-			MasterLimb:  masterLimb,
-			MasterMsgID: common.Itoa(ctx.EffectiveMessage.MessageId),
-			SlaveLimb:   chat.Limb,
-			SlaveMsgID:  "0",
+			MasterLimb:        masterLimb,
+			MasterMsgID:       common.Itoa(ctx.EffectiveMessage.MessageId),
+			MasterMsgThreadID: common.Itoa(ctx.EffectiveMessage.MessageThreadId),
+			SlaveLimb:         chat.Limb,
+			SlaveMsgID:        "0",
 		}); err != nil {
 			log.Warnf("Add message failed: %v", err)
 			return err
@@ -167,7 +180,13 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) er
 	}
 
 	if len(chats) == 0 {
-		_, err := bot.SendMessage(ctx.EffectiveChat.Id, "No chat currently avaiable.", nil)
+		_, err := bot.SendMessage(
+			ctx.EffectiveChat.Id,
+			"No chat currently avaiable.",
+			&gotgbot.SendMessageOpts{
+				MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
+			},
+		)
 		return err
 	}
 
@@ -268,6 +287,7 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) er
 			ctx.EffectiveChat.Id,
 			text,
 			&gotgbot.SendMessageOpts{
+				MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
 				ReplyMarkup: gotgbot.InlineKeyboardMarkup{
 					InlineKeyboard: keyboard,
 				},
@@ -293,7 +313,13 @@ func showChats(bot *gotgbot.Bot, ctx *ext.Context, cb Callback) error {
 	}
 
 	if len(chats) == 0 {
-		_, err := bot.SendMessage(ctx.EffectiveChat.Id, "No chat currently avaiable.", nil)
+		_, err := bot.SendMessage(
+			ctx.EffectiveChat.Id,
+			"No chat currently avaiable.",
+			&gotgbot.SendMessageOpts{
+				MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
+			},
+		)
 		return err
 	}
 
@@ -368,6 +394,7 @@ func showChats(bot *gotgbot.Bot, ctx *ext.Context, cb Callback) error {
 			ctx.EffectiveChat.Id,
 			"Please choose a chat you'd like to talk.",
 			&gotgbot.SendMessageOpts{
+				MessageThreadId: ctx.EffectiveMessage.MessageThreadId,
 				ReplyMarkup: gotgbot.InlineKeyboardMarkup{
 					InlineKeyboard: keyboard,
 				},
