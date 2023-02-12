@@ -5,7 +5,7 @@ import (
 )
 
 func init() {
-	if _, err := db.DB.Prepare(`BEGIN;
+	if _, err := db.DB.Exec(`BEGIN;
 		CREATE TABLE IF NOT EXISTS topic (
 			id INTEGER PRIMARY KEY,
 			master_limb TEXT NOT NULL,
