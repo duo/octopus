@@ -414,7 +414,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			title = fmt.Sprintf("👥 %s [%s]:", displayName(&event.From), event.Chat.Title)
 		}
 		chats = append(chats, &ChatInfo{
-			id:    chatID,
+			id:    adminID,
 			title: title,
 		})
 	}
