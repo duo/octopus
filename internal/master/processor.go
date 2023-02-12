@@ -64,6 +64,9 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 	}.String()
 
 	rawMsg := ctx.EffectiveMessage
+
+	log.Debugf("Receive Telegram message: %+v", rawMsg)
+
 	// find linked limb chat
 	if ctx.EffectiveChat.IsForum {
 		topicID := rawMsg.MessageThreadId
@@ -320,6 +323,8 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			log.Errorf("Panic in handle slave event: %+v %v\n%s", event, panicErr, debug.Stack())
 		}
 	}()
+
+	log.Debugf("Receive octopus event: %+v", event)
 
 	adminID := ms.config.Master.AdminID
 
