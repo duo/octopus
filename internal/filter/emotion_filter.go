@@ -136,9 +136,9 @@ type EmotionFilter struct {
 }
 
 // WeChat -> Telegram: replace WeChat eomtion
-func (f EmotionFilter) Process(in *common.OctopusEvent) (*common.OctopusEvent, bool) {
+func (f EmotionFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 	if in.Vendor.Type == "wechat" {
 		in.Content = replacer.Replace(in.Content)
 	}
-	return in, true
+	return in
 }

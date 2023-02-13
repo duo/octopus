@@ -1,6 +1,15 @@
 package channel
 
-import "github.com/duo/octopus/internal/common"
+import (
+	"reflect"
+	"time"
+
+	"github.com/duo/octopus/internal/common"
+
+	log "github.com/sirupsen/logrus"
+)
+
+const filterTimeout = 30 * time.Second
 
 // unbounded channel
 type MessageChan struct {
@@ -32,16 +41,27 @@ func New(capacity int, filters []Filter) *MessageChan {
 			}
 
 			if len(ch.filters) > 0 {
-				keep := true
-
 				for _, f := range ch.filters {
-					val, keep = ProcessFilter(f, val)
-					if !keep {
+					result := make(chan *common.OctopusEvent, 1)
+
+					go func() {
+						result <- ProcessFilter(f, val)
+					}()
+
+					select {
+					case <-time.After(filterTimeout):
+						log.Warnf("Failed to process v for event: %+v", reflect.TypeOf(f), val)
+						val = nil
+					case ret := <-result:
+						val = ret
+					}
+
+					if val == nil {
 						break
 					}
 				}
 
-				if !keep {
+				if val == nil {
 					continue
 				}
 			}

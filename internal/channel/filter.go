@@ -3,10 +3,9 @@ package channel
 import "github.com/duo/octopus/internal/common"
 
 type Filter interface {
-	Process(in *common.OctopusEvent) (*common.OctopusEvent, bool)
+	Process(in *common.OctopusEvent) *common.OctopusEvent
 }
 
-// it returns modified evnet and a flag (false means drop)
-func ProcessFilter(f Filter, in *common.OctopusEvent) (*common.OctopusEvent, bool) {
+func ProcessFilter(f Filter, in *common.OctopusEvent) *common.OctopusEvent {
 	return f.Process(in)
 }

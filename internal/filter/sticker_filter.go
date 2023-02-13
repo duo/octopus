@@ -16,7 +16,7 @@ type StickerFilter struct {
 }
 
 // Telegram -> QQ/WeChat: convert webm and tgs image to gif
-func (f StickerFilter) Process(in *common.OctopusEvent) (*common.OctopusEvent, bool) {
+func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
 		if in.Type == common.EventPhoto {
 			photos := in.Data.([]*common.BlobData)
@@ -48,7 +48,7 @@ func (f StickerFilter) Process(in *common.OctopusEvent) (*common.OctopusEvent, b
 		}
 
 	}
-	return in, true
+	return in
 }
 
 func webm2gif(rawData []byte) ([]byte, error) {
