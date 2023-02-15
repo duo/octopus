@@ -30,12 +30,14 @@ master:
   local_mode: true # Optional, local server mode
   admin_id: # Required, Telegram user id (administrator)
   token:  1234567:xxxxxxxx # Required, Telegram bot token
+  proxy: http://1.1.1.1:7890 # Optional, proxy for Telegram
   archive: # Optional, archive client chat by topic
     - vendor: wechat # qq, wechat, etc
       uid: wxid_xxxxxxx # client id
       chat_id: 123456789 # topic enabled group id (grant related permissions to bot)
   telegraph: # Optional
     enable: true # Convert some message to telegra.ph article (e.g. QQ forward message)
+  	proxy: http://1.1.1.1:7890 # Optional, proxy for telegra.ph
     tokens:
       - abcdefg # telegra.ph tokens
 

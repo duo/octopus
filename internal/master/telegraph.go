@@ -75,7 +75,7 @@ type Page struct {
 }
 
 func (ms *MasterService) postApp(app *common.AppData) (*Page, error) {
-	client = getClient(ms.config.Master.Proxy)
+	client = getClient(ms.config.Master.Telegraph.Proxy)
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(app.Content))
 	if err != nil {

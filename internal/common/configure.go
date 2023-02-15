@@ -28,6 +28,7 @@ type Configure struct {
 
 		Telegraph struct {
 			Enable bool     `ymal:"enable"`
+			Proxy  string   `yaml:"proxy"`
 			Tokens []string `yaml:"tokens"`
 		} `yaml:"telegraph"`
 	} `yaml:"master"`
