@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	VENDOR_SEP = ";"
+	VENDOR_SEP    = ";"
+	REMOTE_PREFIX = "remote:"
 )
 
 type OctopusMessage struct {
@@ -79,6 +80,9 @@ type AppData struct {
 	Description string `json:"desc,omitempty"`
 	Source      string `json:"source,omitempty"`
 	URL         string `json:"url,omitempty"`
+
+	Content string               `json:"raw,omitempty"`
+	Blobs   map[string]*BlobData `json:"blobs,omitempty"`
 }
 
 type LocationData struct {
@@ -206,11 +210,11 @@ func (o *OctopusEvent) UnmarshalJSON(data []byte) error {
 		}
 		o.Data = location
 	case EventApp:
-		var link *AppData
-		if err := json.Unmarshal(rawMsg, &link); err != nil {
+		var app *AppData
+		if err := json.Unmarshal(rawMsg, &app); err != nil {
 			return err
 		}
-		o.Data = link
+		o.Data = app
 	case EventSync:
 		var chats []*Chat
 		if err := json.Unmarshal(rawMsg, &chats); err != nil {

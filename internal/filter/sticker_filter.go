@@ -1,8 +1,7 @@
 package filter
 
 import (
-	"bytes"
-	"io"
+	"os"
 	"os/exec"
 
 	"github.com/duo/octopus/internal/common"
@@ -28,6 +27,7 @@ func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 						log.Warnf("Failed to convert webm to gif: %v", err)
 					} else {
 						blob.Mime = "image/gif"
+						blob.Name = blob.Name + ".gif"
 						blob.Binary = data
 					}
 				case "video/mp4":
@@ -41,6 +41,7 @@ func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 						log.Warnf("Failed to convert tgs to gif: %v", err)
 					} else {
 						blob.Mime = "image/gif"
+						blob.Name = blob.Name + ".gif"
 						blob.Binary = data
 					}
 				}
@@ -52,34 +53,29 @@ func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 }
 
 func webm2gif(rawData []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(rawData)
-
-	cmd := exec.Command(
-		"ffmpeg", "-i", "pipe:0", "-f", "gif", "pipe:1")
-	stdin, err := cmd.StdinPipe()
+	webmFile, err := os.CreateTemp("", "webm-")
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	defer os.Remove(webmFile.Name())
+	os.WriteFile(webmFile.Name(), rawData, 0o644)
+
+	gifFile, err := os.CreateTemp("", "gif-")
 	if err != nil {
 		return nil, err
 	}
-
-	if err := cmd.Start(); err != nil {
-		return nil, err
+	defer os.Remove(gifFile.Name())
+	{
+		cmd := exec.Command("ffmpeg", "-y", "-i", webmFile.Name(), "-f", "gif", gifFile.Name())
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		if err := cmd.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
-	io.Copy(stdin, buf)
-	stdin.Close()
-
-	outputBuf := &bytes.Buffer{}
-	io.Copy(outputBuf, stdout)
-
-	if err := cmd.Wait(); err != nil {
-		return nil, err
-	}
-
-	return outputBuf.Bytes(), nil
+	return os.ReadFile(gifFile.Name())
 }
 
 func tgs2gif(rawData []byte) ([]byte, error) {

@@ -489,23 +489,33 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			)
 			ms.logMessage(event, resp, err)
 		case common.EventApp:
-			link := event.Data.(*common.AppData)
+			app := event.Data.(*common.AppData)
 			text := fmt.Sprintf("%s\n<u>%s</u>\n\n%s",
 				chat.title,
-				html.EscapeString(link.Title),
-				html.EscapeString(link.Description),
+				html.EscapeString(app.Title),
+				html.EscapeString(app.Description),
 			)
-			if link.URL != "" {
-				source := html.EscapeString(link.Source)
+			if app.URL != "" {
+				source := html.EscapeString(app.Source)
 				if source == "" {
-					source = link.URL
+					source = app.URL
 				}
 				text = fmt.Sprintf("%s\n\nvia <a href=\"%s\">%s</a>",
 					text,
-					link.URL,
+					app.URL,
 					source,
 				)
 			}
+
+			if ms.config.Master.Telegraph.Enable && len(ms.config.Master.Telegraph.Tokens) > 0 {
+				if page, err := ms.postApp(app); err == nil {
+					text = fmt.Sprintf("<a href=\"%s\">%s</a>",
+						page.URL,
+						page.Title,
+					)
+				}
+			}
+
 			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
 				chat.id,

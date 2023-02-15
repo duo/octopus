@@ -25,6 +25,11 @@ type Configure struct {
 		Token     string        `yaml:"token"`
 		Proxy     string        `yaml:"proxy"`
 		Archive   []ArchiveChat `yaml:"archive"`
+
+		Telegraph struct {
+			Enable bool     `ymal:"enable"`
+			Tokens []string `yaml:"tokens"`
+		} `yaml:"telegraph"`
 	} `yaml:"master"`
 
 	Service struct {

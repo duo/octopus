@@ -3,6 +3,8 @@ package common
 import (
 	"strconv"
 	"strings"
+
+	_ "unsafe"
 )
 
 func Itoa(i int64) string {
@@ -30,4 +32,11 @@ func EscapeText(parseMode string, text string) string {
 	}
 
 	return replacer.Replace(text)
+}
+
+//go:linkname Uint32 runtime.fastrand
+func Uint32() uint32
+
+func NextRandom() string {
+	return strconv.Itoa(int(Uint32()))
 }

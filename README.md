@@ -34,6 +34,10 @@ master:
     - vendor: wechat # qq, wechat, etc
       uid: wxid_xxxxxxx # client id
       chat_id: 123456789 # topic enabled group id (grant related permissions to bot)
+  telegraph: # Optional
+    enable: true # Convert some message to telegra.ph article (e.g. QQ forward message)
+    tokens:
+      - abcdefg # telegra.ph tokens
 
 service:
   addr: 0.0.0.0:11111 # Required, listen address
