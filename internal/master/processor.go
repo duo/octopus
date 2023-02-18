@@ -48,9 +48,15 @@ func (ms *MasterService) handleSlaveLoop() {
 
 	for event := range ms.in {
 		if event.Type == common.EventSync {
-			ms.updateChats(event)
+			go ms.updateChats(event)
 		} else {
-			ms.processSlaveEvent(event)
+			event := event
+			go func() {
+				ms.mutex.LockKey(event.Chat.ID)
+				defer ms.mutex.UnlockKey(event.Chat.ID)
+
+				ms.processSlaveEvent(event)
+			}()
 		}
 	}
 }
@@ -350,6 +356,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 		log.Warnf("Get links by slave failed: %v", err)
 		return
 	}
+	log.Debugf("Links by slave(%s): %+v", slaveLimb, links)
 
 	var replyMap = map[int64]int64{}
 	// get reply map for quote and revoke
@@ -446,7 +453,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventText, common.EventSystem:
 			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
@@ -457,7 +464,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventVoIP:
 			ms.bot.SendChatAction(chat.id, "typing", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			resp, err := ms.bot.SendMessage(
@@ -473,7 +480,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventLocation:
 			location := event.Data.(*common.LocationData)
 			resp, err := ms.bot.SendVenue(
@@ -487,7 +494,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventApp:
 			app := event.Data.(*common.AppData)
 			text := fmt.Sprintf("%s\n<u>%s</u>\n\n%s",
@@ -526,7 +533,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ParseMode:        "HTML",
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventAudio:
 			ms.bot.SendChatAction(chat.id, "upload_voice", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
@@ -539,7 +546,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventVideo:
 			ms.bot.SendChatAction(chat.id, "upload_video", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
@@ -559,7 +566,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventFile:
 			ms.bot.SendChatAction(chat.id, "upload_document", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
 			blob := event.Data.(*common.BlobData)
@@ -575,7 +582,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					ReplyToMessageId: replyToMessageID,
 				},
 			)
-			ms.logMessage(event, resp, err)
+			ms.logMessage(chat, event, resp, err)
 		case common.EventPhoto:
 			text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
 			photos := event.Data.([]*common.BlobData)
@@ -596,7 +603,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 							ReplyToMessageId: replyToMessageID,
 						},
 					)
-					ms.logMessage(event, resp, err)
+					ms.logMessage(chat, event, resp, err)
 				} else if isSendAsFile(photo.Binary) {
 					resp, err := ms.bot.SendDocument(
 						chat.id,
@@ -610,7 +617,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 							ReplyToMessageId: replyToMessageID,
 						},
 					)
-					ms.logMessage(event, resp, err)
+					ms.logMessage(chat, event, resp, err)
 				} else {
 					resp, err := ms.bot.SendPhoto(
 						chat.id,
@@ -621,7 +628,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 							ReplyToMessageId: replyToMessageID,
 						},
 					)
-					ms.logMessage(event, resp, err)
+					ms.logMessage(chat, event, resp, err)
 				}
 			} else {
 				var mediaGroup []gotgbot.InputMedia
@@ -683,7 +690,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					log.Warnf("Failed to send to Telegram: %v", err)
 				} else {
 					for _, resp := range resps {
-						ms.logMessage(event, &resp, err)
+						ms.logMessage(chat, event, &resp, err)
 					}
 				}
 			}
@@ -702,8 +709,9 @@ func (ms *MasterService) updateChats(event *common.OctopusEvent) {
 		}
 	}()
 
-	log.Infof("Update chats for %s", event.Vendor)
-	for _, c := range event.Data.([]*common.Chat) {
+	chats := event.Data.([]*common.Chat)
+	log.Infof("Update chats for %s, count: %d", event.Vendor, len(chats))
+	for _, c := range chats {
 		limb := common.Limb{
 			Type:   event.Vendor.Type,
 			UID:    event.Vendor.UID,
@@ -720,9 +728,9 @@ func (ms *MasterService) updateChats(event *common.OctopusEvent) {
 	}
 }
 
-func (ms *MasterService) logMessage(event *common.OctopusEvent, resp *gotgbot.Message, err error) {
+func (ms *MasterService) logMessage(chat *ChatInfo, event *common.OctopusEvent, resp *gotgbot.Message, err error) {
 	if err != nil {
-		log.Warnf("Failed to send to Telegram: %v", err)
+		log.Warnf("Failed to send to Telegram (chat %d, %d): %v", chat.id, chat.threadID, err)
 	} else {
 		masterLimb := common.Limb{
 			Type:   "telegram",

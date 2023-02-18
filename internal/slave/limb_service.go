@@ -49,6 +49,8 @@ type LimbService struct {
 
 	clients     map[string]*LimbClient
 	clientsLock sync.Mutex
+
+	mutex common.KeyMutex
 }
 
 // handle limb client connnection
@@ -124,6 +126,7 @@ func NewLimbService(config *common.Configure, in <-chan *common.OctopusEvent, ou
 		in:      in,
 		out:     out,
 		clients: make(map[string]*LimbClient),
+		mutex:   common.NewHashed(47),
 	}
 	service.server = &http.Server{
 		Addr:    service.config.Service.Addr,
@@ -148,13 +151,17 @@ func (ls *LimbService) handleMasterLoop() {
 		client, ok := ls.clients[vendor]
 		ls.clientsLock.Unlock()
 
-		if !ok {
-			err := fmt.Errorf("LimbClient(%s) not found", vendor)
-			event.Callback(nil, err)
-			continue
-		}
+		if ok {
+			event := event
+			go func() {
+				ls.mutex.LockKey(event.Chat.ID)
+				defer ls.mutex.UnlockKey(event.Chat.ID)
 
-		go ls.handleEvent(client, event)
+				ls.handleEvent(client, event)
+			}()
+		} else {
+			go event.Callback(nil, fmt.Errorf("LimbClient(%s) not found", vendor))
+		}
 	}
 }
 

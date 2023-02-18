@@ -82,6 +82,7 @@ func (lc *LimbClient) run(stopFunc func()) {
 		case common.MsgResponse:
 			lc.websocketRequestsLock.RLock()
 			respChan, ok := lc.websocketRequests[msg.ID]
+			lc.websocketRequestsLock.RUnlock()
 			if ok {
 				select {
 				case respChan <- msg.Data.(*common.OctopusResponse):
@@ -91,7 +92,6 @@ func (lc *LimbClient) run(stopFunc func()) {
 			} else {
 				log.Warnf("Dropping response to %d: unknown request ID", msg.ID)
 			}
-			lc.websocketRequestsLock.RUnlock()
 		}
 	}
 }
@@ -172,6 +172,6 @@ func (lc *LimbClient) removeWebsocketResponseWaiter(reqID int64, waiter chan<- *
 	if ok && existingWaiter == waiter {
 		delete(lc.websocketRequests, reqID)
 	}
-	close(waiter)
 	lc.websocketRequestsLock.Unlock()
+	close(waiter)
 }

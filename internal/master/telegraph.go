@@ -109,7 +109,7 @@ func createPage(selections *goquery.Selection, token string, title string, blobs
 
 			err = fmt.Errorf(res.Error)
 
-			log.Warnf("API error from %s: %v", createPageURL, err)
+			log.Warnf("API error from %s (%+v): %v", createPageURL, params, err)
 		}
 	}
 

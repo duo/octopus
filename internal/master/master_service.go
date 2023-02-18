@@ -33,6 +33,8 @@ type MasterService struct {
 	updater *ext.Updater
 
 	archiveChats map[string]int64
+
+	mutex common.KeyMutex
 }
 
 func (ms *MasterService) Start() {
@@ -114,6 +116,7 @@ func NewMasterService(config *common.Configure, in <-chan *common.OctopusEvent, 
 		in:           in,
 		out:          out,
 		archiveChats: archiveChats,
+		mutex:        common.NewHashed(47),
 	}
 }
 
