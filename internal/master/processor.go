@@ -585,7 +585,30 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			ms.logMessage(chat, event, resp, err)
 		case common.EventSticker:
 			blob := event.Data.(*common.BlobData)
-			ms.sendPhoto(chat, replyToMessageID, blob, event)
+			if strings.HasSuffix(blob.Mime, "png") || strings.HasSuffix(blob.Mime, "webp") {
+				resp, err := ms.bot.SendSticker(
+					chat.id,
+					&gotgbot.NamedFile{
+						File:     bytes.NewReader(blob.Binary),
+						FileName: blob.Name,
+					},
+					&gotgbot.SendStickerOpts{
+						MessageThreadId:  chat.threadID,
+						ReplyToMessageId: replyToMessageID,
+						ReplyMarkup: gotgbot.InlineKeyboardMarkup{
+							InlineKeyboard: [][]gotgbot.InlineKeyboardButton{{
+								gotgbot.InlineKeyboardButton{
+									Text: fmt.Sprintf("%s\n%s", chat.title, event.Content),
+									Url:  "tg://sticker",
+								},
+							}},
+						},
+					},
+				)
+				ms.logMessage(chat, event, resp, err)
+			} else {
+				ms.sendPhoto(chat, replyToMessageID, blob, event)
+			}
 		case common.EventPhoto:
 			photos := event.Data.([]*common.BlobData)
 			if len(photos) == 1 {

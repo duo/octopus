@@ -29,11 +29,12 @@ func main() {
 
 	m2s := []channel.Filter{
 		filter.SilkFilter{},
-		filter.StickerFilter{},
+		filter.StickerFilter{FromMaster: true},
 	}
 	s2m := []channel.Filter{
 		filter.SilkFilter{},
-		filter.EmotionFilter{},
+		filter.StickerFilter{FromMaster: false},
+		filter.EmoticonFilter{},
 	}
 
 	masterToSlave := channel.New(1024, m2s)

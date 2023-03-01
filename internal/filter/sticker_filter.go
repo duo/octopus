@@ -1,21 +1,32 @@
 package filter
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 
 	"github.com/duo/octopus/internal/common"
+	"github.com/gabriel-vasile/mimetype"
 
 	"github.com/Benau/tgsconverter/libtgsconverter"
+	"github.com/tidwall/gjson"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type StickerFilter struct {
+	FromMaster bool
+}
+
+func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
+	if f.FromMaster {
+		return f.processM2S(in)
+	}
+	return f.processS2M(in)
 }
 
 // Telegram -> QQ/WeChat: convert webm and tgs image to gif
-func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
+func (f StickerFilter) processM2S(in *common.OctopusEvent) *common.OctopusEvent {
 	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
 		if in.Type == common.EventPhoto || in.Type == common.EventSticker {
 			var blob *common.BlobData
@@ -52,6 +63,48 @@ func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 
 	}
 	return in
+}
+
+// QQ/WeChat -> Telegram
+func (f StickerFilter) processS2M(in *common.OctopusEvent) *common.OctopusEvent {
+	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
+		if in.Type == common.EventSticker {
+			blob := in.Data.(*common.BlobData)
+			mime := mimetype.Detect(blob.Binary)
+			blob.Mime = mime.String()
+			if blob.Mime == "image/gif" {
+				if probe, err := ffprobe(blob.Binary); err == nil {
+					if gjson.Get(probe, "streams.0.nb_frames").Int() == 1 {
+						blob.Mime = "image/png"
+					}
+				} else {
+					log.Warnf("Failed to probe gif: %v", err)
+				}
+			}
+		}
+	}
+	return in
+}
+
+func ffprobe(rawData []byte) (string, error) {
+	probeFile, err := os.CreateTemp("", "probe-")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(probeFile.Name())
+	os.WriteFile(probeFile.Name(), rawData, 0o644)
+
+	var out bytes.Buffer
+	cmd := exec.Command("ffprobe", probeFile.Name(), "-show_format", "-show_streams", "-of", "json")
+	cmd.Stdout = &out
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	if err := cmd.Wait(); err != nil {
+		return "", err
+	}
+
+	return out.String(), nil
 }
 
 func webm2gif(rawData []byte) ([]byte, error) {

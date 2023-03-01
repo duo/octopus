@@ -132,11 +132,11 @@ var replacer = strings.NewReplacer(
 	"[笑脸]", "😁", "[Happy]", "😁",
 )
 
-type EmotionFilter struct {
+type EmoticonFilter struct {
 }
 
 // WeChat -> Telegram: replace WeChat eomtion
-func (f EmotionFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
+func (f EmoticonFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 	if in.Vendor.Type == "wechat" {
 		in.Content = replacer.Replace(in.Content)
 	}
