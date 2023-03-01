@@ -197,7 +197,7 @@ func (o *OctopusEvent) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		o.Data = photos
-	case EventAudio, EventVideo, EventFile:
+	case EventSticker, EventAudio, EventVideo, EventFile:
 		var blob *BlobData
 		if err := json.Unmarshal(rawMsg, &blob); err != nil {
 			return err
@@ -257,6 +257,7 @@ const (
 	EventSystem
 	EventSync
 	EventObserve
+	EventSticker
 )
 
 type MessageType int
@@ -332,6 +333,8 @@ func (t EventType) String() string {
 		return "sync"
 	case EventObserve:
 		return "observe"
+	case EventSticker:
+		return "sticker"
 	default:
 		return "unknown"
 	}

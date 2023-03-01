@@ -206,18 +206,18 @@ func (ms *MasterService) transferMasterMessage(ctx *ext.Context, slaveLimb strin
 			event.Data = []*common.BlobData{blob}
 		}
 	} else if rawMsg.Sticker != nil {
-		event.Type = common.EventPhoto
+		event.Type = common.EventSticker
 		if blob, err := ms.download(rawMsg.Sticker.FileId); err != nil {
 			return err
 		} else {
-			event.Data = []*common.BlobData{blob}
+			event.Data = blob
 		}
 	} else if rawMsg.Animation != nil {
-		event.Type = common.EventPhoto
+		event.Type = common.EventSticker
 		if blob, err := ms.download(rawMsg.Animation.FileId); err != nil {
 			return err
 		} else {
-			event.Data = []*common.BlobData{blob}
+			event.Data = blob
 		}
 	} else if rawMsg.Voice != nil {
 		event.Type = common.EventAudio
@@ -514,7 +514,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				)
 			}
 
-			if ms.config.Master.Telegraph.Enable && len(ms.config.Master.Telegraph.Tokens) > 0 {
+			if ms.config.Master.Telegraph.Enable && len(ms.config.Master.Telegraph.Tokens) > 0 && app.Content != "" {
 				if page, err := ms.postApp(app); err == nil {
 					text = fmt.Sprintf("<a href=\"%s\">%s</a>",
 						page.URL,
@@ -583,54 +583,15 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
+		case common.EventSticker:
+			blob := event.Data.(*common.BlobData)
+			ms.sendPhoto(chat, replyToMessageID, blob, event)
 		case common.EventPhoto:
-			text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
 			photos := event.Data.([]*common.BlobData)
 			if len(photos) == 1 {
-				photo := photos[0]
-				ms.bot.SendChatAction(chat.id, "upload_photo", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
-				mime := mimetype.Detect(photo.Binary)
-				if mime.String() == "image/gif" {
-					resp, err := ms.bot.SendAnimation(
-						chat.id,
-						&gotgbot.NamedFile{
-							File:     bytes.NewReader(photo.Binary),
-							FileName: photo.Name + ".gif",
-						},
-						&gotgbot.SendAnimationOpts{
-							Caption:          text,
-							MessageThreadId:  chat.threadID,
-							ReplyToMessageId: replyToMessageID,
-						},
-					)
-					ms.logMessage(chat, event, resp, err)
-				} else if isSendAsFile(photo.Binary) {
-					resp, err := ms.bot.SendDocument(
-						chat.id,
-						&gotgbot.NamedFile{
-							File:     bytes.NewReader(photo.Binary),
-							FileName: photo.Name,
-						},
-						&gotgbot.SendDocumentOpts{
-							Caption:          text,
-							MessageThreadId:  chat.threadID,
-							ReplyToMessageId: replyToMessageID,
-						},
-					)
-					ms.logMessage(chat, event, resp, err)
-				} else {
-					resp, err := ms.bot.SendPhoto(
-						chat.id,
-						photo.Binary,
-						&gotgbot.SendPhotoOpts{
-							Caption:          text,
-							MessageThreadId:  chat.threadID,
-							ReplyToMessageId: replyToMessageID,
-						},
-					)
-					ms.logMessage(chat, event, resp, err)
-				}
+				ms.sendPhoto(chat, replyToMessageID, photos[0], event)
 			} else {
+				text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
 				var mediaGroup []gotgbot.InputMedia
 				for i, photo := range photos {
 					if i == 10 {
@@ -642,34 +603,6 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 						caption = text
 					}
 
-					/*
-						mime := mimetype.Detect(photo.Binary)
-						if mime.String() == "image/gif" {
-							mediaGroup = append(mediaGroup, gotgbot.InputMediaAnimation{
-								Media: &gotgbot.NamedFile{
-									File:     bytes.NewReader(photo.Binary),
-									FileName: photo.Name,
-								},
-								Caption: caption,
-							})
-						} else if isSendAsFile(photo.Binary) {
-							mediaGroup = append(mediaGroup, gotgbot.InputMediaDocument{
-								Media: &gotgbot.NamedFile{
-									File:     bytes.NewReader(photo.Binary),
-									FileName: photo.Name,
-								},
-								Caption: caption,
-							})
-						} else {
-							mediaGroup = append(mediaGroup, gotgbot.InputMediaPhoto{
-								Media: &gotgbot.NamedFile{
-									File:     bytes.NewReader(photo.Binary),
-									FileName: photo.Name,
-								},
-								Caption: caption,
-							})
-						}
-					*/
 					mediaGroup = append(mediaGroup, gotgbot.InputMediaPhoto{
 						Media: &gotgbot.NamedFile{
 							File:     bytes.NewReader(photo.Binary),
@@ -687,7 +620,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					},
 				)
 				if err != nil {
-					log.Warnf("Failed to send to Telegram: %v", err)
+					log.Warnf("Failed to send to Telegram (chat %d, %d): %v", chat.id, chat.threadID, err)
 				} else {
 					for _, resp := range resps {
 						ms.logMessage(chat, event, &resp, err)
@@ -725,6 +658,53 @@ func (ms *MasterService) updateChats(event *common.OctopusEvent) {
 		if err := manager.AddOrUpdateChat(chat); err != nil {
 			log.Warnf("Failed to add or update chat: %v", err)
 		}
+	}
+}
+
+func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo *common.BlobData, event *common.OctopusEvent) {
+	text := fmt.Sprintf("%s\n%s", chat.title, event.Content)
+
+	ms.bot.SendChatAction(chat.id, "upload_photo", &gotgbot.SendChatActionOpts{MessageThreadId: chat.threadID})
+	mime := mimetype.Detect(photo.Binary)
+	if mime.String() == "image/gif" {
+		resp, err := ms.bot.SendAnimation(
+			chat.id,
+			&gotgbot.NamedFile{
+				File:     bytes.NewReader(photo.Binary),
+				FileName: photo.Name + ".gif",
+			},
+			&gotgbot.SendAnimationOpts{
+				Caption:          text,
+				MessageThreadId:  chat.threadID,
+				ReplyToMessageId: replyToMessageID,
+			},
+		)
+		ms.logMessage(chat, event, resp, err)
+	} else if isSendAsFile(photo.Binary) {
+		resp, err := ms.bot.SendDocument(
+			chat.id,
+			&gotgbot.NamedFile{
+				File:     bytes.NewReader(photo.Binary),
+				FileName: photo.Name,
+			},
+			&gotgbot.SendDocumentOpts{
+				Caption:          text,
+				MessageThreadId:  chat.threadID,
+				ReplyToMessageId: replyToMessageID,
+			},
+		)
+		ms.logMessage(chat, event, resp, err)
+	} else {
+		resp, err := ms.bot.SendPhoto(
+			chat.id,
+			photo.Binary,
+			&gotgbot.SendPhotoOpts{
+				Caption:          text,
+				MessageThreadId:  chat.threadID,
+				ReplyToMessageId: replyToMessageID,
+			},
+		)
+		ms.logMessage(chat, event, resp, err)
 	}
 }
 
@@ -861,7 +841,10 @@ func displayName(user *common.User) string {
 	if len(user.Remark) > 0 {
 		return user.Remark
 	}
-	return user.Username
+	if len(user.Username) > 0 {
+		return user.Username
+	}
+	return user.ID
 }
 
 func isSendAsFile(data []byte) bool {

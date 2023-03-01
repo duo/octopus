@@ -17,33 +17,35 @@ type StickerFilter struct {
 // Telegram -> QQ/WeChat: convert webm and tgs image to gif
 func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
 	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
-		if in.Type == common.EventPhoto {
-			photos := in.Data.([]*common.BlobData)
-			if len(photos) == 1 {
-				blob := photos[0]
-				switch blob.Mime {
-				case "video/webm":
-					if data, err := webm2gif(blob.Binary); err != nil {
-						log.Warnf("Failed to convert webm to gif: %v", err)
-					} else {
-						blob.Mime = "image/gif"
-						blob.Name = blob.Name + ".gif"
-						blob.Binary = data
-					}
-				case "video/mp4":
-					// TODO: solve export gif over size
-					if in.Vendor.Type == "qq" {
-						in.Type = common.EventVideo
-						in.Data = blob
-					}
-				case "application/gzip": // TGS
-					if data, err := tgs2gif(blob.Binary); err != nil {
-						log.Warnf("Failed to convert tgs to gif: %v", err)
-					} else {
-						blob.Mime = "image/gif"
-						blob.Name = blob.Name + ".gif"
-						blob.Binary = data
-					}
+		if in.Type == common.EventPhoto || in.Type == common.EventSticker {
+			var blob *common.BlobData
+			if in.Type == common.EventPhoto {
+				blob = in.Data.([]*common.BlobData)[0]
+			} else {
+				blob = in.Data.(*common.BlobData)
+			}
+			switch blob.Mime {
+			case "video/webm":
+				if data, err := webm2gif(blob.Binary); err != nil {
+					log.Warnf("Failed to convert webm to gif: %v", err)
+				} else {
+					blob.Mime = "image/gif"
+					blob.Name = blob.Name + ".gif"
+					blob.Binary = data
+				}
+			case "video/mp4":
+				// TODO: solve export gif over size
+				if in.Vendor.Type == "qq" {
+					in.Type = common.EventVideo
+					in.Data = blob
+				}
+			case "application/gzip": // TGS
+				if data, err := tgs2gif(blob.Binary); err != nil {
+					log.Warnf("Failed to convert tgs to gif: %v", err)
+				} else {
+					blob.Mime = "image/gif"
+					blob.Name = blob.Name + ".gif"
+					blob.Binary = data
 				}
 			}
 		}
