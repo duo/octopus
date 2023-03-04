@@ -516,7 +516,8 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 
 			if ms.config.Master.Telegraph.Enable && len(ms.config.Master.Telegraph.Tokens) > 0 && app.Content != "" {
 				if page, err := ms.postApp(app); err == nil {
-					text = fmt.Sprintf("<a href=\"%s\">%s</a>",
+					text = fmt.Sprintf("%s\n<a href=\"%s\">%s</a>",
+						chat.title,
 						page.URL,
 						page.Title,
 					)
