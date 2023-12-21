@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	defaultPageSize    = 10
 	defaultSendTimeout = 3 * time.Minute
 )
 
@@ -24,6 +25,7 @@ type Configure struct {
 		AdminID   int64         `yaml:"admin_id"`
 		Token     string        `yaml:"token"`
 		Proxy     string        `yaml:"proxy"`
+		PageSize  int           `yaml:"page_size"`
 		Archive   []ArchiveChat `yaml:"archive"`
 
 		Telegraph struct {
@@ -52,6 +54,7 @@ func LoadConfig(path string) (*Configure, error) {
 
 	config := &Configure{}
 	config.Master.APIURL = "https://api.telegram.org"
+	config.Master.PageSize = defaultPageSize
 	config.Service.SendTiemout = defaultSendTimeout
 	if err := yaml.Unmarshal(file, &config); err != nil {
 		return nil, err

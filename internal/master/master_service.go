@@ -133,7 +133,7 @@ func (ms *MasterService) onMessage(bot *gotgbot.Bot, ctx *ext.Context) error {
 
 	// Handle command
 	if isCommand(ctx.EffectiveMessage) {
-		return onCommand(bot, ctx)
+		return onCommand(bot, ctx, ms.config)
 	}
 
 	return ms.processMasterMessage(ctx)
@@ -147,9 +147,9 @@ func (ms *MasterService) onCallback(bot *gotgbot.Bot, ctx *ext.Context) error {
 
 	switch cb.Category {
 	case "link":
-		return handleLink(bot, ctx, ctx.Update.CallbackQuery.From.Id, cb)
+		return handleLink(bot, ctx, ms.config, ctx.Update.CallbackQuery.From.Id, cb)
 	case "chat":
-		return handleChat(bot, ctx, ctx.Update.CallbackQuery.From.Id, cb)
+		return handleChat(bot, ctx, ms.config, ctx.Update.CallbackQuery.From.Id, cb)
 	default:
 		return errors.New("invalid callback data")
 	}

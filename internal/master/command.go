@@ -15,9 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const pageSize int = 10
-
-func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
+func onCommand(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure) error {
 	text := ctx.EffectiveMessage.Text
 	if strings.HasPrefix(text, "/help") {
 		_, err := bot.SendMessage(
@@ -50,7 +48,7 @@ func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
 			cb.Query = parts[1]
 		}
 
-		return handleLink(bot, ctx, ctx.Message.From.Id, cb)
+		return handleLink(bot, ctx, config, ctx.Message.From.Id, cb)
 	} else if strings.HasPrefix(text, "/chat") {
 		cb := Callback{
 			Category: "chat",
@@ -61,7 +59,7 @@ func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
 			cb.Query = parts[1]
 		}
 
-		return handleChat(bot, ctx, ctx.Message.From.Id, cb)
+		return handleChat(bot, ctx, config, ctx.Message.From.Id, cb)
 	} else {
 		_, err := bot.SendMessage(
 			ctx.EffectiveChat.Id,
@@ -74,7 +72,7 @@ func onCommand(bot *gotgbot.Bot, ctx *ext.Context) error {
 	}
 }
 
-func handleLink(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) error {
+func handleLink(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure, userID int64, cb Callback) error {
 	if cb.Acction == "close" {
 		_, _, err := ctx.EffectiveMessage.EditText(
 			bot,
@@ -103,10 +101,10 @@ func handleLink(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) e
 		}
 	}
 
-	return showLinks(bot, ctx, userID, cb)
+	return showLinks(bot, ctx, config, userID, cb)
 }
 
-func handleChat(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) error {
+func handleChat(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure, userID int64, cb Callback) error {
 	if cb.Acction == "close" {
 		_, _, err := ctx.EffectiveMessage.EditText(
 			bot,
@@ -149,10 +147,10 @@ func handleChat(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) e
 		return err
 	}
 
-	return showChats(bot, ctx, cb)
+	return showChats(bot, ctx, config, cb)
 }
 
-func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) error {
+func showLinks(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure, userID int64, cb Callback) error {
 	masterLimb := common.Limb{
 		Type:   "telegram",
 		UID:    common.Itoa(userID),
@@ -165,7 +163,7 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) er
 		return err
 	}
 
-	pager := manager.CalcPager(cb.Page, pageSize, count)
+	pager := manager.CalcPager(cb.Page, config.Master.PageSize, count)
 
 	links, err := manager.GetLinkList()
 	if err != nil {
@@ -173,7 +171,7 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) er
 		return err
 	}
 
-	chats, err := manager.GetChatList(pager.CurrentPage, pageSize, cb.Query)
+	chats, err := manager.GetChatList(pager.CurrentPage, config.Master.PageSize, cb.Query)
 	if err != nil {
 		log.Warnf("Get chat list failed: %v", err)
 		return err
@@ -297,16 +295,16 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, userID int64, cb Callback) er
 	}
 }
 
-func showChats(bot *gotgbot.Bot, ctx *ext.Context, cb Callback) error {
+func showChats(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure, cb Callback) error {
 	count, err := manager.GetChatCount(cb.Query)
 	if err != nil {
 		log.Warnf("Get chat cout failed: %v", err)
 		return err
 	}
 
-	pager := manager.CalcPager(cb.Page, pageSize, count)
+	pager := manager.CalcPager(cb.Page, config.Master.PageSize, count)
 
-	chats, err := manager.GetChatList(pager.CurrentPage, pageSize, cb.Query)
+	chats, err := manager.GetChatList(pager.CurrentPage, config.Master.PageSize, cb.Query)
 	if err != nil {
 		log.Warnf("Get chat list failed: %v", err)
 		return err

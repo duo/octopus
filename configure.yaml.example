@@ -4,6 +4,7 @@ master:
   admin_id: # Required, Telegram user id (administrator)
   token:  1234567:xxxxxxxx # Required, Telegram bot token
   proxy: http://1.1.1.1:7890 # Optional, proxy for Telegram
+  page_size: 10 # Optional, command list result pagination size
   archive: # Optional
     - vendor: wechat # qq, wechat, etc
       uid: wxid_xxxxxxx # client id
