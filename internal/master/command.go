@@ -15,6 +15,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	maxShowBindedLinks = 7
+)
+
 func onCommand(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure) error {
 	text := ctx.EffectiveMessage.Text
 	if strings.HasPrefix(text, "/help") {
@@ -195,9 +199,15 @@ func showLinks(bot *gotgbot.Bot, ctx *ext.Context, config *common.Configure, use
 		log.Warnf("Get links by master failed: %v", err)
 		return err
 	}
-	for _, l := range bindLinks {
+	for idx, l := range bindLinks {
+		if idx >= maxShowBindedLinks {
+			break
+		}
 		limb, _ := common.LimbFromString(l.SlaveLimb)
 		text += fmt.Sprintf("\n🔗%s(%s) from (%s %s)", l.Title, limb.ChatID, limb.Type, limb.UID)
+	}
+	if len(bindLinks) > maxShowBindedLinks {
+		text += fmt.Sprintf("\n\nand %d more...", len(bindLinks)-maxShowBindedLinks)
 	}
 
 	keyboard := [][]gotgbot.InlineKeyboardButton{}
