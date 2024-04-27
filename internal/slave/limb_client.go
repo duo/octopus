@@ -40,17 +40,8 @@ func NewLimbClient(vendor string, config *common.Configure, conn *websocket.Conn
 	}
 }
 
-func (lc *LimbClient) Dispose() {
-	oldConn := lc.conn
-	if oldConn == nil {
-		return
-	}
-	msg := websocket.FormatCloseMessage(
-		websocket.CloseGoingAway,
-		fmt.Sprintf(`{"type": %d, "data": {"type": %d, "data": "server_shutting_down"}}`, common.MsgRequest, common.ReqDisconnect),
-	)
-	_ = oldConn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(3*time.Second))
-	_ = oldConn.Close()
+func (lc *LimbClient) Vendor() string {
+	return lc.vendor
 }
 
 // read message from limb client
@@ -97,7 +88,7 @@ func (lc *LimbClient) run(stopFunc func()) {
 }
 
 // send event to limb client, and return response
-func (lc *LimbClient) sendEvent(event *common.OctopusEvent) (*common.OctopusEvent, error) {
+func (lc *LimbClient) SendEvent(event *common.OctopusEvent) (*common.OctopusEvent, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), lc.config.Service.SendTiemout)
 	defer cancel()
 
@@ -174,4 +165,17 @@ func (lc *LimbClient) removeWebsocketResponseWaiter(reqID int64, waiter chan<- *
 	}
 	lc.websocketRequestsLock.Unlock()
 	close(waiter)
+}
+
+func (lc *LimbClient) Dispose() {
+	oldConn := lc.conn
+	if oldConn == nil {
+		return
+	}
+	msg := websocket.FormatCloseMessage(
+		websocket.CloseGoingAway,
+		fmt.Sprintf(`{"type": %d, "data": {"type": %d, "data": "server_shutting_down"}}`, common.MsgRequest, common.ReqDisconnect),
+	)
+	_ = oldConn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(3*time.Second))
+	_ = oldConn.Close()
 }

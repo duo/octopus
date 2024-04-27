@@ -2,6 +2,7 @@ package master
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"html"
@@ -90,19 +91,6 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 				}
 			}
 		}
-	} else if ctx.EffectiveChat.Type == "group" || ctx.EffectiveChat.Type == "supergroup" {
-		if links, err := manager.GetLinksByMaster(masterLimb); err != nil {
-			log.Warnf("Get links by master failed: %v", err)
-			return err
-		} else {
-			if len(links) == 0 {
-				return ms.replayLinkIssue(rawMsg, "*No linked chat on group found.*")
-			} else if len(links) > 1 {
-				return ms.replayLinkIssue(rawMsg, "*Multiple linked chat found.*")
-			} else {
-				return ms.transferMasterMessage(ctx, links[0].SlaveLimb)
-			}
-		}
 	} else if rawMsg.ReplyToMessage != nil {
 		logMsg, err := manager.GetMessageByMasterMsgId(
 			masterLimb,
@@ -115,6 +103,19 @@ func (ms *MasterService) processMasterMessage(ctx *ext.Context) error {
 			return ms.replayLinkIssue(rawMsg, "*No linked chat by reply found.*")
 		} else {
 			return ms.transferMasterMessage(ctx, logMsg.SlaveLimb)
+		}
+	} else if ctx.EffectiveChat.Type == "group" || ctx.EffectiveChat.Type == "supergroup" {
+		if links, err := manager.GetLinksByMaster(masterLimb); err != nil {
+			log.Warnf("Get links by master failed: %v", err)
+			return err
+		} else {
+			if len(links) == 0 {
+				return ms.replayLinkIssue(rawMsg, "*No linked chat on group found.*")
+			} else if len(links) > 1 {
+				return ms.replayLinkIssue(rawMsg, "*Multiple linked chat found.*")
+			} else {
+				return ms.transferMasterMessage(ctx, links[0].SlaveLimb)
+			}
 		}
 	} else {
 		return ms.replayLinkIssue(rawMsg, "*No linked chat found.*")
@@ -256,6 +257,14 @@ func (ms *MasterService) transferMasterMessage(ctx *ext.Context, slaveLimb strin
 			}
 			event.Data = blob
 		}
+	} else if rawMsg.Venue != nil {
+		event.Type = common.EventLocation
+		event.Data = &common.LocationData{
+			Name:      rawMsg.Venue.Title,
+			Address:   rawMsg.Venue.Address,
+			Longitude: rawMsg.Venue.Location.Longitude,
+			Latitude:  rawMsg.Venue.Location.Latitude,
+		}
 	} else if rawMsg.Location != nil {
 		event.Type = common.EventLocation
 		event.Data = &common.LocationData{
@@ -267,14 +276,6 @@ func (ms *MasterService) transferMasterMessage(ctx *ext.Context, slaveLimb strin
 			),
 			Longitude: rawMsg.Location.Longitude,
 			Latitude:  rawMsg.Location.Latitude,
-		}
-	} else if rawMsg.Venue != nil {
-		event.Type = common.EventLocation
-		event.Data = &common.LocationData{
-			Name:      rawMsg.Venue.Title,
-			Address:   rawMsg.Venue.Address,
-			Longitude: rawMsg.Venue.Location.Longitude,
-			Latitude:  rawMsg.Venue.Location.Latitude,
 		}
 	} else if rawMsg.Text == "" {
 		return fmt.Errorf("message type not support: %+v", rawMsg)
@@ -448,9 +449,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					common.EscapeText("MarkdownV2", event.Content),
 				),
 				&gotgbot.SendMessageOpts{
-					ParseMode:        "MarkdownV2",
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					ParseMode:       "MarkdownV2",
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -460,8 +463,10 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				chat.id,
 				fmt.Sprintf("%s\n%s", chat.title, event.Content),
 				&gotgbot.SendMessageOpts{
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -475,9 +480,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					common.EscapeText("MarkdownV2", event.Content),
 				),
 				&gotgbot.SendMessageOpts{
-					ParseMode:        "MarkdownV2",
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					ParseMode:       "MarkdownV2",
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -490,8 +497,10 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				fmt.Sprintf("%s\n%s", chat.title, location.Name),
 				location.Address,
 				&gotgbot.SendVenueOpts{
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -529,9 +538,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				chat.id,
 				text,
 				&gotgbot.SendMessageOpts{
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
-					ParseMode:        "HTML",
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
+					ParseMode: "HTML",
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -542,9 +553,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				chat.id,
 				blob.Binary,
 				&gotgbot.SendVoiceOpts{
-					Caption:          chat.title,
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					Caption:         chat.title,
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -562,9 +575,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				//},
 				blob.Binary,
 				&gotgbot.SendVideoOpts{
-					Caption:          text,
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					Caption:         text,
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -578,9 +593,11 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					FileName: blob.Name,
 				},
 				&gotgbot.SendDocumentOpts{
-					Caption:          chat.title,
-					MessageThreadId:  chat.threadID,
-					ReplyToMessageId: replyToMessageID,
+					Caption:         chat.title,
+					MessageThreadId: chat.threadID,
+					ReplyParameters: &gotgbot.ReplyParameters{
+						MessageId: replyToMessageID,
+					},
 				},
 			)
 			ms.logMessage(chat, event, resp, err)
@@ -594,8 +611,10 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 						FileName: blob.Name,
 					},
 					&gotgbot.SendStickerOpts{
-						MessageThreadId:  chat.threadID,
-						ReplyToMessageId: replyToMessageID,
+						MessageThreadId: chat.threadID,
+						ReplyParameters: &gotgbot.ReplyParameters{
+							MessageId: replyToMessageID,
+						},
 						ReplyMarkup: gotgbot.InlineKeyboardMarkup{
 							InlineKeyboard: [][]gotgbot.InlineKeyboardButton{{
 								gotgbot.InlineKeyboardButton{
@@ -639,8 +658,10 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					chat.id,
 					mediaGroup,
 					&gotgbot.SendMediaGroupOpts{
-						MessageThreadId:  chat.threadID,
-						ReplyToMessageId: replyToMessageID,
+						MessageThreadId: chat.threadID,
+						ReplyParameters: &gotgbot.ReplyParameters{
+							MessageId: replyToMessageID,
+						},
 					},
 				)
 				if err != nil {
@@ -698,9 +719,11 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 				FileName: photo.Name + ".gif",
 			},
 			&gotgbot.SendAnimationOpts{
-				Caption:          text,
-				MessageThreadId:  chat.threadID,
-				ReplyToMessageId: replyToMessageID,
+				Caption:         text,
+				MessageThreadId: chat.threadID,
+				ReplyParameters: &gotgbot.ReplyParameters{
+					MessageId: replyToMessageID,
+				},
 			},
 		)
 		ms.logMessage(chat, event, resp, err)
@@ -712,9 +735,11 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 				FileName: photo.Name,
 			},
 			&gotgbot.SendDocumentOpts{
-				Caption:          text,
-				MessageThreadId:  chat.threadID,
-				ReplyToMessageId: replyToMessageID,
+				Caption:         text,
+				MessageThreadId: chat.threadID,
+				ReplyParameters: &gotgbot.ReplyParameters{
+					MessageId: replyToMessageID,
+				},
 			},
 		)
 		ms.logMessage(chat, event, resp, err)
@@ -723,9 +748,11 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 			chat.id,
 			photo.Binary,
 			&gotgbot.SendPhotoOpts{
-				Caption:          text,
-				MessageThreadId:  chat.threadID,
-				ReplyToMessageId: replyToMessageID,
+				Caption:         text,
+				MessageThreadId: chat.threadID,
+				ReplyParameters: &gotgbot.ReplyParameters{
+					MessageId: replyToMessageID,
+				},
 			},
 		)
 		ms.logMessage(chat, event, resp, err)
@@ -840,7 +867,7 @@ func (ms *MasterService) download(fileID string) (*common.BlobData, error) {
 				return nil, err
 			}
 		} else {
-			response, err := ms.client.Get(file.GetURL(ms.bot))
+			response, err := ms.client.Get(file.URL(ms.bot, ms.opts))
 			if err != nil {
 				return nil, err
 			}
@@ -862,13 +889,7 @@ func (ms *MasterService) download(fileID string) (*common.BlobData, error) {
 }
 
 func displayName(user *common.User) string {
-	if len(user.Remark) > 0 {
-		return user.Remark
-	}
-	if len(user.Username) > 0 {
-		return user.Username
-	}
-	return user.ID
+	return cmp.Or(user.Remark, user.Username, user.ID)
 }
 
 func isSendAsFile(data []byte) bool {

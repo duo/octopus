@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/duo/octopus/internal/common"
+
 	"github.com/gorilla/websocket"
 
 	log "github.com/sirupsen/logrus"
@@ -47,14 +48,24 @@ type LimbService struct {
 
 	server *http.Server
 
-	clients     map[string]*LimbClient
+	clients     map[string]Client
 	clientsLock sync.Mutex
 
 	mutex common.KeyMutex
 }
 
-// handle limb client connnection
+// handle client connnection
 func (ls *LimbService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/onebot/") {
+		ls.handleOnebotConnection(w, r)
+		return
+	}
+
+	ls.handleLimbConnection(w, r)
+}
+
+// handle limb client connnection
+func (ls *LimbService) handleLimbConnection(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if !strings.HasPrefix(authHeader, "Basic ") {
 		errMissingToken.Write(w)
@@ -92,6 +103,49 @@ func (ls *LimbService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handle onebot client connnection
+func (ls *LimbService) handleOnebotConnection(w http.ResponseWriter, r *http.Request) {
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		errMissingToken.Write(w)
+		return
+	}
+
+	if authHeader[len("Bearer "):] != ls.config.Service.Secret {
+		errUnknownToken.Write(w)
+		return
+	}
+
+	selfID := r.Header.Get("X-Self-Id")
+	if selfID == "" {
+		errMissingVendor.Write(w)
+		return
+	}
+	vendor := common.Vendor{
+		Type: r.URL.Path[8:],
+		UID:  selfID,
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Warnf("Failed to upgrade websocket request: %v", err)
+		return
+	}
+
+	ls.observe(fmt.Sprintf("OnebotClient(%s) connected", vendor))
+
+	oc := NewOnebotClient(&vendor, ls.config, conn, ls.out)
+	ls.clientsLock.Lock()
+	ls.clients[vendor.String()] = oc
+	ls.clientsLock.Unlock()
+	oc.run(func() {
+		ls.observe(fmt.Sprintf("OnebotClient(%s) disconnected", vendor))
+		ls.clientsLock.Lock()
+		delete(ls.clients, vendor.String())
+		ls.clientsLock.Unlock()
+	})
+}
+
 func (ls *LimbService) Start() {
 	log.Infoln("LimbService starting to listen on", ls.config.Service.Addr)
 	go func() {
@@ -125,7 +179,7 @@ func NewLimbService(config *common.Configure, in <-chan *common.OctopusEvent, ou
 		config:  config,
 		in:      in,
 		out:     out,
-		clients: make(map[string]*LimbClient),
+		clients: make(map[string]Client),
 		mutex:   common.NewHashed(47),
 	}
 	service.server = &http.Server{
@@ -165,9 +219,9 @@ func (ls *LimbService) handleMasterLoop() {
 	}
 }
 
-func (ls *LimbService) handleEvent(client *LimbClient, event *common.OctopusEvent) {
-	if resp, err := client.sendEvent(event); err != nil {
-		sendErr := fmt.Errorf("failed to send event to %s: %v", client.vendor, err)
+func (ls *LimbService) handleEvent(client Client, event *common.OctopusEvent) {
+	if resp, err := client.SendEvent(event); err != nil {
+		sendErr := fmt.Errorf("failed to send event to %s: %v", client.Vendor(), err)
 		event.Callback(nil, sendErr)
 	} else {
 		event.ID = resp.ID

@@ -29,6 +29,7 @@ type MasterService struct {
 	out chan<- *common.OctopusEvent
 
 	client  http.Client
+	opts    *gotgbot.RequestOpts
 	bot     *gotgbot.Bot
 	updater *ext.Updater
 
@@ -39,6 +40,10 @@ type MasterService struct {
 
 func (ms *MasterService) Start() {
 	ms.client = http.Client{}
+	ms.opts = &gotgbot.RequestOpts{
+		Timeout: requestTimeout,
+		APIURL:  ms.config.Master.APIURL,
+	}
 
 	if ms.config.Master.Proxy != "" {
 		proxyUrl, err := url.Parse(ms.config.Master.Proxy)
@@ -49,12 +54,11 @@ func (ms *MasterService) Start() {
 	}
 
 	bot, err := gotgbot.NewBot(ms.config.Master.Token, &gotgbot.BotOpts{
-		Client: ms.client,
-		RequestOpts: &gotgbot.RequestOpts{
-			Timeout: requestTimeout,
-			APIURL:  ms.config.Master.APIURL,
+		BotClient: &gotgbot.BaseBotClient{
+			Client:             ms.client,
+			DefaultRequestOpts: ms.opts,
 		},
-		DefaultRequestOpts: &gotgbot.RequestOpts{
+		RequestOpts: &gotgbot.RequestOpts{
 			Timeout: requestTimeout,
 			APIURL:  ms.config.Master.APIURL,
 		},
@@ -64,16 +68,14 @@ func (ms *MasterService) Start() {
 	}
 	ms.bot = bot
 
-	ms.updater = ext.NewUpdater(&ext.UpdaterOpts{
-		Dispatcher: ext.NewDispatcher(&ext.DispatcherOpts{
-			Error: func(bot *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
-				log.Infoln("an error occurred while handling update:", err.Error())
-				return ext.DispatcherActionNoop
-			},
-			MaxRoutines: ext.DefaultMaxRoutines,
-		}),
+	dispatcher := ext.NewDispatcher(&ext.DispatcherOpts{
+		Error: func(b *gotgbot.Bot, ctx *ext.Context, err error) ext.DispatcherAction {
+			log.Infoln("an error occurred while handling update:", err.Error())
+			return ext.DispatcherActionNoop
+		},
+		MaxRoutines: ext.DefaultMaxRoutines,
 	})
-	dispatcher := ms.updater.Dispatcher
+	ms.updater = ext.NewUpdater(dispatcher, nil)
 
 	dispatcher.AddHandler(handlers.NewCallback(callbackquery.All, ms.onCallback))
 	dispatcher.AddHandler(handlers.NewMessage(message.All, ms.onMessage))
@@ -81,11 +83,9 @@ func (ms *MasterService) Start() {
 	log.Infof("MasterService starting for %s", bot.User.Username)
 	err = ms.updater.StartPolling(bot, &ext.PollingOpts{
 		DropPendingUpdates: true,
-		GetUpdatesOpts: gotgbot.GetUpdatesOpts{
-			Timeout: updateTimeout,
-			RequestOpts: &gotgbot.RequestOpts{
-				Timeout: requestTimeout,
-			},
+		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
+			Timeout:     updateTimeout,
+			RequestOpts: ms.opts,
 		},
 	})
 	if err != nil {

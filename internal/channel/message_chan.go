@@ -50,7 +50,7 @@ func New(capacity int, filters []Filter) *MessageChan {
 
 					select {
 					case <-time.After(filterTimeout):
-						log.Warnf("Failed to process v for event: %+v", reflect.TypeOf(f), val)
+						log.Warnf("Failed to process %v for event: %+v", reflect.TypeOf(f), val)
 						val = nil
 					case ret := <-result:
 						val = ret
