@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/duo/octopus/internal/common"
+	"github.com/duo/octopus/internal/filter"
 	"github.com/duo/octopus/internal/onebot"
 	"github.com/tidwall/gjson"
 
@@ -32,15 +33,28 @@ type OnebotClient struct {
 	conn *websocket.Conn
 	out  chan<- *common.OctopusEvent
 
+	s2m filter.EventFilterChain
+	m2s filter.EventFilterChain
+
 	writeLock sync.Mutex
 
 	websocketRequests     map[string]chan<- *onebot.Response
 	websocketRequestsLock sync.RWMutex
 	websocketRequestID    int64
+
+	mutex common.KeyMutex
 }
 
 func NewOnebotClient(vendor *common.Vendor, config *common.Configure, conn *websocket.Conn, out chan<- *common.OctopusEvent) *OnebotClient {
 	log.Infof("OnebotClient(%s) websocket connected", vendor)
+
+	m2s := filter.NewEventFilterChain(
+		filter.StickerM2SFilter{},
+	)
+	s2m := filter.NewEventFilterChain(
+		filter.VoiceS2MFilter{},
+		filter.EmoticonS2MFilter{},
+	)
 
 	return &OnebotClient{
 		vendor:            vendor,
@@ -49,7 +63,10 @@ func NewOnebotClient(vendor *common.Vendor, config *common.Configure, conn *webs
 		groups:            make(map[int64]*onebot.GroupInfo),
 		conn:              conn,
 		out:               out,
+		m2s:               m2s,
+		s2m:               s2m,
 		websocketRequests: make(map[string]chan<- *onebot.Response),
+		mutex:             common.NewHashed(47),
 	}
 }
 
@@ -91,6 +108,8 @@ func (oc *OnebotClient) run(stopFunc func()) {
 // send event to onebot client, and return response
 func (oc *OnebotClient) SendEvent(event *common.OctopusEvent) (*common.OctopusEvent, error) {
 	log.Debugf("Receive Octopus event: %+v", event)
+
+	event = oc.m2s.Apply(event)
 
 	targetID, err := common.Atoi(event.Chat.ID)
 	if err != nil {
@@ -210,6 +229,11 @@ func (oc *OnebotClient) processResponse(resp *onebot.Response) {
 
 func (oc *OnebotClient) processEvent(event onebot.IEvent) {
 	log.Debugf("Receive event: %+v", event)
+
+	key := oc.getEventKey(event)
+	oc.mutex.LockKey(key)
+	defer oc.mutex.UnlockKey(key)
+
 	switch event.EventType() {
 	case onebot.MessagePrivate:
 		oc.processPrivateMessage(event.(*onebot.Message))
@@ -224,6 +248,26 @@ func (oc *OnebotClient) processEvent(event onebot.IEvent) {
 	case onebot.MetaHeartbeat:
 		log.Debugf("Receive heartbeat: %+v", event.(*onebot.Heartbeat).Status)
 	}
+}
+
+func (oc *OnebotClient) getEventKey(event onebot.IEvent) string {
+	switch event.EventType() {
+	case onebot.MessagePrivate:
+		m := event.(*onebot.Message)
+		targetID := m.Sender.UserID
+		if m.PostType == "message_sent" { // sent by self
+			targetID = m.TargetID
+		}
+		return common.Itoa(targetID)
+	case onebot.MessageGroup:
+		return common.Itoa(event.(*onebot.Message).GroupID)
+	case onebot.NoticeGroupRecall:
+		return common.Itoa(event.(*onebot.GroupRecall).GroupID)
+	case onebot.NoticeFriendRecall:
+		return common.Itoa(event.(*onebot.FriendRecall).UserID)
+	}
+
+	return ""
 }
 
 func (oc *OnebotClient) processPrivateMessage(m *onebot.Message) {
@@ -404,7 +448,7 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 		}
 	}
 
-	oc.out <- event
+	oc.pushEvent(event)
 }
 
 func (oc *OnebotClient) processMetaLifycycle(m *onebot.LifeCycle) {
@@ -446,7 +490,7 @@ func (oc *OnebotClient) processGroupRecall(m *onebot.GroupRecall) {
 		Sender:    targetName,
 	}
 
-	oc.out <- event
+	oc.pushEvent(event)
 }
 
 func (oc *OnebotClient) processFriendRecall(m *onebot.FriendRecall) {
@@ -482,6 +526,8 @@ func (oc *OnebotClient) processFriendRecall(m *onebot.FriendRecall) {
 		Timestamp: 0,
 		Sender:    targetName,
 	}
+
+	oc.pushEvent(event)
 }
 
 func (oc *OnebotClient) getGroupMemberInfo(groupID, userID int64, noCache bool) (*onebot.Sender, error) {
@@ -704,7 +750,7 @@ func (oc *OnebotClient) updateChats() {
 	event.Type = common.EventSync
 	event.Data = chats
 
-	oc.out <- event
+	oc.pushEvent(event)
 }
 
 func (oc *OnebotClient) generateEvent(id string, ts int64) *common.OctopusEvent {
@@ -713,6 +759,12 @@ func (oc *OnebotClient) generateEvent(id string, ts int64) *common.OctopusEvent 
 		ID:        id,
 		Timestamp: ts,
 	}
+}
+
+func (oc *OnebotClient) pushEvent(event *common.OctopusEvent) {
+	event = oc.s2m.Apply(event)
+
+	oc.out <- event
 }
 
 func (oc *OnebotClient) request(req *onebot.Request) (any, error) {

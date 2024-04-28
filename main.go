@@ -6,9 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/duo/octopus/internal/channel"
 	"github.com/duo/octopus/internal/common"
-	"github.com/duo/octopus/internal/filter"
 	"github.com/duo/octopus/internal/master"
 	"github.com/duo/octopus/internal/slave"
 
@@ -27,18 +25,8 @@ func main() {
 	}
 	log.SetFormatter(&log.TextFormatter{TimestampFormat: "2006-01-02 15:04:05", FullTimestamp: true})
 
-	m2s := []channel.Filter{
-		filter.SilkFilter{},
-		filter.StickerFilter{FromMaster: true},
-	}
-	s2m := []channel.Filter{
-		filter.SilkFilter{},
-		filter.StickerFilter{FromMaster: false},
-		filter.EmoticonFilter{},
-	}
-
-	masterToSlave := channel.New(1024, m2s)
-	slaveToMaster := channel.New(1024, s2m)
+	masterToSlave := common.NewMessageChan(1024)
+	slaveToMaster := common.NewMessageChan(1024)
 
 	master := master.NewMasterService(config, slaveToMaster.Out(), masterToSlave.In())
 	master.Start()

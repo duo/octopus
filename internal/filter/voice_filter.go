@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/duo/octopus/internal/common"
+
 	"github.com/wdvxdr1123/go-silk"
 
 	log "github.com/sirupsen/logrus"
@@ -15,48 +16,57 @@ import (
 
 const sampleRate = 24000
 
-type SilkFilter struct {
+// Telegram -> QQ/WeChat: convert opus voice to silk
+type VoiceM2SFilter struct {
 }
 
-// Telegram -> QQ/WeChat: convert opus voice to silk
-// QQ/WeChat -> Telegram: convert silk voice to opus
-func (f SilkFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
-	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
-		if in.Type == common.EventAudio {
-			blob := in.Data.(*common.BlobData)
-			if blob.Mime == "audio/ogg" { // from Telegram
-				if in.Vendor.Type == "qq" {
-					if data, err := ogg2silk(blob.Binary); err != nil {
-						log.Warnf("Failed to convert ogg to silk: %v", err)
-					} else {
-						blob.Mime = "audio/silk"
-						blob.Binary = data
-					}
-				} else {
-					if data, err := ogg2mp3(blob.Binary); err != nil {
-						log.Warnf("Failed to convert ogg to mp3: %v", err)
-					} else {
-						in.Type = common.EventFile
-						blob.Mime = "audio/mpeg"
-						blob.Binary = data
-
-						randBytes := make([]byte, 4)
-						rand.Read(randBytes)
-						blob.Name = fmt.Sprintf("VOICE_%s.mp3", hex.EncodeToString(randBytes))
-					}
-				}
+func (f VoiceM2SFilter) Apply(event *common.OctopusEvent) *common.OctopusEvent {
+	if event.Type == common.EventAudio {
+		blob := event.Data.(*common.BlobData)
+		switch event.Vendor.Type {
+		case "qq":
+			if data, err := ogg2silk(blob.Binary); err != nil {
+				log.Warnf("Failed to convert ogg to silk: %v", err)
 			} else {
-				// from QQ/WeChat
-				if data, err := silk2ogg(blob.Binary); err != nil {
-					log.Warnf("Failed to convert silk to ogg: %v", err)
-				} else {
-					blob.Mime = "audio/ogg"
-					blob.Binary = data
-				}
+				blob.Mime = "audio/silk"
+				blob.Binary = data
+			}
+		case "wechat":
+			if data, err := ogg2mp3(blob.Binary); err != nil {
+				log.Warnf("Failed to convert ogg to mp3: %v", err)
+			} else {
+				event.Type = common.EventFile
+				blob.Mime = "audio/mpeg"
+				blob.Binary = data
+
+				randBytes := make([]byte, 4)
+				rand.Read(randBytes)
+				blob.Name = fmt.Sprintf("VOICE_%s.mp3", hex.EncodeToString(randBytes))
 			}
 		}
 	}
-	return in
+
+	return event
+}
+
+// QQ/WeChat -> Telegram: convert silk voice to opus
+type VoiceS2MFilter struct {
+}
+
+func (f VoiceS2MFilter) Apply(event *common.OctopusEvent) *common.OctopusEvent {
+	if event.Type == common.EventAudio {
+		blob := event.Data.(*common.BlobData)
+		if event.Vendor.Type == "qq" || event.Vendor.Type == "wechat" {
+			if data, err := silk2ogg(blob.Binary); err != nil {
+				log.Warnf("Failed to convert silk to ogg: %v", err)
+			} else {
+				blob.Mime = "audio/ogg"
+				blob.Binary = data
+			}
+		}
+	}
+
+	return event
 }
 
 func silk2ogg(rawData []byte) ([]byte, error) {

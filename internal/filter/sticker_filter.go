@@ -14,26 +14,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type StickerFilter struct {
-	FromMaster bool
-}
-
-func (f StickerFilter) Process(in *common.OctopusEvent) *common.OctopusEvent {
-	if f.FromMaster {
-		return f.processM2S(in)
-	}
-	return f.processS2M(in)
-}
-
 // Telegram -> QQ/WeChat: convert webm and tgs image to gif
-func (f StickerFilter) processM2S(in *common.OctopusEvent) *common.OctopusEvent {
-	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
-		if in.Type == common.EventPhoto || in.Type == common.EventSticker {
+type StickerM2SFilter struct {
+}
+
+func (f StickerM2SFilter) Apply(event *common.OctopusEvent) *common.OctopusEvent {
+	if event.Type == common.EventPhoto || event.Type == common.EventSticker {
+		if event.Vendor.Type == "qq" || event.Vendor.Type == "wechat" {
 			var blob *common.BlobData
-			if in.Type == common.EventPhoto {
-				blob = in.Data.([]*common.BlobData)[0]
+			if event.Type == common.EventPhoto {
+				blob = event.Data.([]*common.BlobData)[0]
 			} else {
-				blob = in.Data.(*common.BlobData)
+				blob = event.Data.(*common.BlobData)
 			}
 			switch blob.Mime {
 			case "video/webm":
@@ -46,9 +38,9 @@ func (f StickerFilter) processM2S(in *common.OctopusEvent) *common.OctopusEvent 
 				}
 			case "video/mp4":
 				// TODO: solve export gif over size
-				if in.Vendor.Type == "qq" {
-					in.Type = common.EventVideo
-					in.Data = blob
+				if event.Vendor.Type == "qq" {
+					event.Type = common.EventVideo
+					event.Data = blob
 				}
 			case "application/gzip": // TGS
 				if data, err := tgs2gif(blob.Binary); err != nil {
@@ -60,16 +52,19 @@ func (f StickerFilter) processM2S(in *common.OctopusEvent) *common.OctopusEvent 
 				}
 			}
 		}
-
 	}
-	return in
+
+	return event
 }
 
 // QQ/WeChat -> Telegram
-func (f StickerFilter) processS2M(in *common.OctopusEvent) *common.OctopusEvent {
-	if in.Vendor.Type == "qq" || in.Vendor.Type == "wechat" {
-		if in.Type == common.EventSticker {
-			blob := in.Data.(*common.BlobData)
+type StickerS2MFilter struct {
+}
+
+func (f StickerS2MFilter) Apply(event *common.OctopusEvent) *common.OctopusEvent {
+	if event.Type == common.EventSticker {
+		if event.Vendor.Type == "qq" || event.Vendor.Type == "wechat" {
+			blob := event.Data.(*common.BlobData)
 			mime := mimetype.Detect(blob.Binary)
 			blob.Mime = mime.String()
 			if blob.Mime == "image/jpeg" {
@@ -90,7 +85,8 @@ func (f StickerFilter) processS2M(in *common.OctopusEvent) *common.OctopusEvent 
 			}
 		}
 	}
-	return in
+
+	return event
 }
 
 func ffprobe(rawData []byte) (string, error) {

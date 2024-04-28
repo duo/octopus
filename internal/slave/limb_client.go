@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/duo/octopus/internal/common"
+	"github.com/duo/octopus/internal/filter"
 
 	"github.com/gorilla/websocket"
 
@@ -21,22 +22,40 @@ type LimbClient struct {
 	conn *websocket.Conn
 	out  chan<- *common.OctopusEvent
 
+	s2m filter.EventFilterChain
+	m2s filter.EventFilterChain
+
 	writeLock sync.Mutex
 
 	websocketRequests     map[int64]chan<- *common.OctopusResponse
 	websocketRequestsLock sync.RWMutex
 	websocketRequestID    int64
+
+	mutex common.KeyMutex
 }
 
 func NewLimbClient(vendor string, config *common.Configure, conn *websocket.Conn, out chan<- *common.OctopusEvent) *LimbClient {
 	log.Infof("LimbClient(%s) websocket connected", vendor)
+
+	m2s := filter.NewEventFilterChain(
+		filter.StickerM2SFilter{},
+		filter.VoiceM2SFilter{},
+	)
+	s2m := filter.NewEventFilterChain(
+		filter.StickerS2MFilter{},
+		filter.VoiceS2MFilter{},
+		filter.EmoticonS2MFilter{},
+	)
 
 	return &LimbClient{
 		vendor:            vendor,
 		config:            config,
 		conn:              conn,
 		out:               out,
+		m2s:               m2s,
+		s2m:               s2m,
 		websocketRequests: make(map[int64]chan<- *common.OctopusResponse),
+		mutex:             common.NewHashed(47),
 	}
 }
 
@@ -66,7 +85,16 @@ func (lc *LimbClient) run(stopFunc func()) {
 			if request.Type == common.ReqPing {
 				log.Debugln("Receive ping request")
 			} else if request.Type == common.ReqEvent {
-				lc.out <- request.Data.(*common.OctopusEvent)
+				go func() {
+					event := request.Data.(*common.OctopusEvent)
+
+					lc.mutex.LockKey(event.Chat.ID)
+					defer lc.mutex.UnlockKey(event.Chat.ID)
+
+					event = lc.s2m.Apply(event)
+
+					lc.out <- event
+				}()
 			} else {
 				log.Warnf("Request %s not support", request.Type)
 			}
@@ -91,6 +119,8 @@ func (lc *LimbClient) run(stopFunc func()) {
 func (lc *LimbClient) SendEvent(event *common.OctopusEvent) (*common.OctopusEvent, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), lc.config.Service.SendTiemout)
 	defer cancel()
+
+	event = lc.m2s.Apply(event)
 
 	if data, err := lc.request(ctx, &common.OctopusRequest{
 		Type: common.ReqEvent,
