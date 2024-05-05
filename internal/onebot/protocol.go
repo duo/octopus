@@ -112,6 +112,13 @@ func NewGetRecordRequest(file string) *Request {
 	}
 }
 
+func NewGetImageRequest(fileID string) *Request {
+	return &Request{
+		Action: "get_image",
+		Params: map[string]interface{}{"file": fileID},
+	}
+}
+
 func NewGetFileRequest(fileID string) *Request {
 	return &Request{
 		Action: "get_file",
@@ -155,6 +162,26 @@ func NewGroupMsgRequest(groupID int64, segments []ISegment) *Request {
 	}
 }
 
+func NewPrivateForwardRequest(userID int64, messageID int32) *Request {
+	return &Request{
+		Action: "forward_friend_single_msg",
+		Params: map[string]interface{}{
+			"user_id":    userID,
+			"message_id": messageID,
+		},
+	}
+}
+
+func NewGroupForwardRequest(groupID int64, messageID int32) *Request {
+	return &Request{
+		Action: "forward_group_single_msg",
+		Params: map[string]interface{}{
+			"group_id":   groupID,
+			"message_id": messageID,
+		},
+	}
+}
+
 type Response struct {
 	Status  string `json:"status"`
 	Retcode int32  `json:"retcode"`
@@ -180,6 +207,7 @@ type GroupInfo struct {
 type FileInfo struct {
 	File     string `json:"file" mapstructure:"file"`
 	FileName string `json:"file_name" mapstructure:"file_name"`
+	URL      string `json:"url" mapstructure:"url"`
 	Base64   string `json:"base64,omitempty" mapstructure:"base64,omitempty"`
 	Data     []byte
 	//FileSize string `json:"file_size" mapstructure:"file_size"`
@@ -422,7 +450,7 @@ func (s *FaceSegment) ID() string {
 }
 
 func (s *MarketFaceSegment) Content() string {
-	return s.Data["text"].(string)
+	return s.Data["summary"].(string)
 }
 
 func (s *ImageSegment) File() string {

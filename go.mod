@@ -4,8 +4,8 @@ go 1.22
 
 require (
 	github.com/Benau/tgsconverter v0.0.0-20210809170556-99f4a4f6337f
-	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.25
-	github.com/PuerkitoBio/goquery v1.9.1
+	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.26
+	github.com/PuerkitoBio/goquery v1.9.2
 	github.com/gabriel-vasile/mimetype v1.4.3
 	github.com/gorilla/websocket v1.5.1
 	github.com/mitchellh/mapstructure v1.5.0
@@ -34,7 +34,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	golang.org/x/sys v0.19.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240304020402-f0dba7c97c2b // indirect
-	modernc.org/libc v1.50.4 // indirect
+	modernc.org/libc v1.50.5 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect

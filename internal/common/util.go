@@ -2,6 +2,7 @@ package common
 
 import (
 	"compress/gzip"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,6 +13,29 @@ import (
 	_ "unsafe"
 )
 
+var tlsCipherSuites = []uint16{
+	// AEADs w/ ECDHE
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+
+	// CBC w/ ECDHE
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA, tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA, tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+
+	// AEADs w/o ECDHE
+	tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+
+	// CBC w/o ECDHE
+	tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+	tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+
+	// 3DES
+	tls.TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+	tls.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+}
+
 var (
 	httpClient = &http.Client{
 		Transport: &http.Transport{
@@ -19,6 +43,10 @@ var (
 			MaxConnsPerHost:     0,
 			MaxIdleConns:        0,
 			MaxIdleConnsPerHost: 256,
+			TLSClientConfig: &tls.Config{
+				CipherSuites: tlsCipherSuites,
+				MinVersion:   tls.VersionTLS10,
+			},
 		},
 	}
 

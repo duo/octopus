@@ -341,49 +341,43 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 			summary = append(summary, fmt.Sprintf("@%s ", targetName))
 		case *onebot.ImageSegment:
 			summary = append(summary, "[图片]")
-
-			if bin, err := common.Download(v.URL()); err != nil {
-				log.Warnf("Download image failed: %v", err)
+			if v.URL() == "" {
+				if bin, err := oc.getMedia(onebot.GetImage, v.File()); err != nil {
+					log.Warnf("Download image failed: %v", err)
+				} else {
+					photos = append(photos, bin)
+				}
 			} else {
-				bin.Name = v.File()
-				photos = append(photos, bin)
+				if bin, err := common.Download(v.URL()); err != nil {
+					log.Warnf("Download image failed: %v", err)
+				} else {
+					bin.Name = v.File()
+					photos = append(photos, bin)
+				}
 			}
 		case *onebot.FileSegment:
-			if fileInfo, err := oc.getFile(v.FileID()); err == nil {
-				event.Type = common.EventFile
-				event.Data = &common.BlobData{
-					Name:   fileInfo.FileName,
-					Binary: fileInfo.Data,
-					Mime:   mimetype.Detect(fileInfo.Data).String(),
-				}
-			} else {
+			if bin, err := oc.getMedia(onebot.GetFile, v.FileID()); err != nil {
 				log.Warnf("Download file failed: %v", err)
 				event.Content = "[文件下载失败]"
+			} else {
+				event.Type = common.EventFile
+				event.Data = bin
 			}
 		case *onebot.RecordSegment:
-			if fileInfo, err := oc.getRecord(v.File()); err == nil {
-				event.Type = common.EventAudio
-				event.Data = &common.BlobData{
-					Name:   fileInfo.FileName,
-					Binary: fileInfo.Data,
-					Mime:   mimetype.Detect(fileInfo.Data).String(),
-				}
-			} else {
+			if bin, err := oc.getMedia(onebot.GetRecord, v.File()); err != nil {
 				log.Warnf("Download record failed: %v", err)
 				event.Content = "[语音下载失败]"
-			}
-			summary = append(summary, fmt.Sprintf("[%v]", s.SegmentType()))
-		case *onebot.VideoSegment:
-			if fileInfo, err := oc.getFile(v.FileID()); err == nil {
-				event.Type = common.EventVideo
-				event.Data = &common.BlobData{
-					Name:   fileInfo.FileName,
-					Binary: fileInfo.Data,
-					Mime:   mimetype.Detect(fileInfo.Data).String(),
-				}
 			} else {
-				log.Warnf("Download file failed: %v", err)
+				event.Type = common.EventAudio
+				event.Data = bin
+			}
+		case *onebot.VideoSegment:
+			if bin, err := oc.getMedia(onebot.GetFile, v.FileID()); err != nil {
+				log.Warnf("Download video failed: %v", err)
 				event.Content = "[视频下载失败]"
+			} else {
+				event.Type = common.EventVideo
+				event.Data = bin
 			}
 		case *onebot.ReplySegment:
 			event.Reply = &common.ReplyInfo{
@@ -440,11 +434,16 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 	}
 
 	if len(summary) > 0 {
-		event.Content = strings.Join(summary, "")
-
-		if len(photos) > 0 {
+		if len(summary) == 1 && segments[0].SegmentType() == onebot.Image {
 			event.Type = common.EventPhoto
 			event.Data = photos
+		} else {
+			event.Content = strings.Join(summary, "")
+
+			if len(photos) > 0 {
+				event.Type = common.EventPhoto
+				event.Data = photos
+			}
 		}
 	}
 
@@ -453,6 +452,7 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 
 func (oc *OnebotClient) processMetaLifycycle(m *onebot.LifeCycle) {
 	if m.SubType == "connect" {
+		time.Sleep(time.Minute)
 		oc.updateChats()
 	}
 }
@@ -541,22 +541,46 @@ func (oc *OnebotClient) getGroupMemberInfo(groupID, userID int64, noCache bool) 
 	return nil, err
 }
 
-func (oc *OnebotClient) getRecord(file string) (*onebot.FileInfo, error) {
+func (oc *OnebotClient) getMedia(t onebot.RequestType, file string) (*common.BlobData, error) {
+	var request *onebot.Request
+	switch t {
+	case onebot.GetRecord:
+		request = onebot.NewGetRecordRequest(file)
+	case onebot.GetImage:
+		request = onebot.NewGetImageRequest(file)
+	case onebot.GetFile:
+		request = onebot.NewGetFileRequest(file)
+	default:
+		return nil, fmt.Errorf("request type not support: %+v", t)
+	}
+
 	count := 0
 
 	for {
 		count += 1
-		resp, err := oc.request(onebot.NewGetRecordRequest(file))
+		resp, err := oc.request(request)
 		if err == nil {
 			var f onebot.FileInfo
-			if err = mapstructure.Decode(resp, &f); err == nil {
-				var data []byte
-				if data, err = base64.StdEncoding.DecodeString(f.Base64); err == nil {
-					f.Data = data
-					return &f, nil
-				}
+			if err = mapstructure.Decode(resp, &f); err != nil {
+				return nil, err
 			}
 
+			if f.Base64 != "" {
+				var data []byte
+				if data, err = base64.StdEncoding.DecodeString(f.Base64); err == nil {
+					return &common.BlobData{
+						Name:   f.FileName,
+						Mime:   mimetype.Detect(data).String(),
+						Binary: data,
+					}, nil
+				}
+			} else {
+				var bin *common.BlobData
+				if bin, err = common.Download(f.URL); err == nil {
+					bin.Name = f.FileName
+					return bin, nil
+				}
+			}
 		}
 
 		if count > 3 {
@@ -564,22 +588,6 @@ func (oc *OnebotClient) getRecord(file string) (*onebot.FileInfo, error) {
 		}
 		time.Sleep(3 * time.Second)
 	}
-}
-
-func (oc *OnebotClient) getFile(fileID string) (*onebot.FileInfo, error) {
-	resp, err := oc.request(onebot.NewGetFileRequest(fileID))
-	if err == nil {
-		var f onebot.FileInfo
-		if err = mapstructure.Decode(resp, &f); err == nil {
-			if data, err := base64.StdEncoding.DecodeString(f.Base64); err == nil {
-				f.Data = data
-				return &f, nil
-			} else {
-				return nil, err
-			}
-		}
-	}
-	return nil, err
 }
 
 func (oc *OnebotClient) getMsg(id int32) (*onebot.BareMessage, error) {
@@ -591,6 +599,16 @@ func (oc *OnebotClient) getMsg(id int32) (*onebot.BareMessage, error) {
 	}
 
 	return nil, err
+}
+
+func (oc *OnebotClient) forwardFriendSingleMsg(userID int64, messageID int32) error {
+	_, err := oc.request(onebot.NewPrivateForwardRequest(userID, messageID))
+	return err
+}
+
+func (oc *OnebotClient) forwardGroupSingleMsg(groupID int64, messageID int32) error {
+	_, err := oc.request(onebot.NewGroupForwardRequest(groupID, messageID))
+	return err
 }
 
 func (oc *OnebotClient) getForwardMsg(id string) ([]*onebot.Message, error) {
@@ -646,7 +664,15 @@ func (oc *OnebotClient) convertForward(id string) *common.AppData {
 					content = append(content, fmt.Sprintf("@%s ", v.Target()))
 				case *onebot.ImageSegment:
 					summary = append(summary, "[图片]")
-					if bin, err := common.Download(v.URL()); err != nil {
+
+					var bin *common.BlobData
+					var err error
+					if v.URL() == "" {
+						bin, err = oc.getMedia(onebot.GetImage, v.File())
+					} else {
+						bin, err = common.Download(v.URL())
+					}
+					if err != nil {
 						log.Warnf("Download image failed: %v", err)
 						content = append(content, "[图片]")
 					} else {
