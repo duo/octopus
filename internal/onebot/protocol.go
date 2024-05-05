@@ -265,17 +265,18 @@ func (e *Event) EventType() EventType {
 
 type Message struct {
 	Event       `mapstructure:",squash"`
-	MessageType string    `json:"message_type" mapstructure:"message_type"`
-	SubType     string    `json:"sub_type" mapstructure:"sub_type"`
-	MessageID   int32     `json:"message_id" mapstructure:"message_id"`
-	GroupID     int64     `json:"group_id,omitempty" mapstructure:"group_id,omitempty"`
-	UserID      int64     `json:"user_id" mapstructure:"user_id"`
-	TargetID    int64     `json:"target_id,omitempty" mapstructure:"target_id,omitempty"`
-	Anonymous   Anonymous `json:"anonymous,omitempty" mapstructure:"anonymous,omitempty"`
-	Message     any       `json:"message" mapstructure:"message"`
-	RawMessage  string    `json:"raw_message,omitempty" mapstructure:"raw_message,omitempty"`
-	Font        int32     `json:"font" mapstructure:"font"`
-	Sender      Sender    `json:"sender" mapstructure:"sender"`
+	MessageType string     `json:"message_type" mapstructure:"message_type"`
+	SubType     string     `json:"sub_type" mapstructure:"sub_type"`
+	MessageID   int32      `json:"message_id" mapstructure:"message_id"`
+	GroupID     int64      `json:"group_id,omitempty" mapstructure:"group_id,omitempty"`
+	UserID      int64      `json:"user_id" mapstructure:"user_id"`
+	TargetID    int64      `json:"target_id,omitempty" mapstructure:"target_id,omitempty"`
+	Anonymous   Anonymous  `json:"anonymous,omitempty" mapstructure:"anonymous,omitempty"`
+	Message     any        `json:"message" mapstructure:"message"`
+	RawMessage  string     `json:"raw_message,omitempty" mapstructure:"raw_message,omitempty"`
+	Raw         RawMessage `json:"raw,omitempty" mapstructure:"raw,omitempty"`
+	Font        int32      `json:"font" mapstructure:"font"`
+	Sender      Sender     `json:"sender" mapstructure:"sender"`
 }
 
 func (pm *Message) EventType() EventType {
@@ -301,6 +302,18 @@ type Sender struct {
 	Level    int32  `json:"level,omitempty" mapstructure:"level,omitempty"`
 	Role     string `json:"role,omitempty" mapstructure:"role,omitempty"`
 	Title    string `json:"title,omitempty" mapstructure:"title,omitempty"`
+}
+
+type RawMessage struct {
+	Elements []Element `json:"elements" mapstructure:"elements"`
+}
+
+type Element struct {
+	PicElement PicElement `json:"picElement,omitempty" mapstructure:"picElement,omitempty"`
+}
+
+type PicElement struct {
+	Summary string `json:"summary,omitempty" mapstructure:"summary,omitempty"`
 }
 
 type LifeCycle struct {
@@ -394,7 +407,8 @@ type MarketFaceSegment struct {
 }
 
 type ImageSegment struct {
-	Segment `mapstructure:",squash"`
+	Segment   `mapstructure:",squash"`
+	IsSticker bool
 }
 
 type RecordSegment struct {
@@ -557,10 +571,11 @@ func NewFace(id string) *FaceSegment {
 
 func NewImage(file string) *ImageSegment {
 	return &ImageSegment{
-		Segment{
+		Segment: Segment{
 			Type: string(Image),
 			Data: map[string]interface{}{"file": file},
 		},
+		IsSticker: false,
 	}
 }
 
@@ -693,10 +708,11 @@ func unmarshalMessage(m map[string]interface{}) (Payload, error) {
 	if err := mapstructure.Decode(m, &event); err != nil {
 		return nil, err
 	}
+
 	if m["message"] != nil {
-		event.Message = generateSegments(m["message"].([]interface{}))
+		event.Message = generateSegments(m["message"].([]interface{}), event.Raw.Elements)
 	} else if m["content"] != nil {
-		event.Message = generateSegments(m["content"].([]interface{}))
+		event.Message = generateSegments(m["content"].([]interface{}), event.Raw.Elements)
 	}
 	return &event, nil
 }
@@ -749,10 +765,14 @@ func unmarshalResponse(m map[string]interface{}) (Payload, error) {
 	return &event, err
 }
 
-func generateSegments(d []interface{}) []ISegment {
+func generateSegments(d []interface{}, elements []Element) []ISegment {
 	segments := []ISegment{}
 
-	for _, s := range d {
+	if len(d) != len(elements) {
+		elements = make([]Element, len(d))
+	}
+
+	for index, s := range d {
 		switch s.(map[string]interface{})["type"].(string) {
 		case string(Text):
 			var segment TextSegment
@@ -770,6 +790,9 @@ func generateSegments(d []interface{}) []ISegment {
 			var segment ImageSegment
 			mapstructure.Decode(s, &segment)
 			segments = append(segments, &segment)
+			if elements[index].PicElement.Summary == "[动画表情]" {
+				segment.IsSticker = true
+			}
 		case string(Record):
 			var segment RecordSegment
 			mapstructure.Decode(s, &segment)

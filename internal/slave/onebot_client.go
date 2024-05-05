@@ -54,6 +54,7 @@ func NewOnebotClient(vendor *common.Vendor, config *common.Configure, conn *webs
 	s2m := filter.NewEventFilterChain(
 		filter.VoiceS2MFilter{},
 		filter.EmoticonS2MFilter{},
+		filter.StickerS2MFilter{},
 	)
 
 	return &OnebotClient{
@@ -437,6 +438,11 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 		if len(summary) == 1 && segments[0].SegmentType() == onebot.Image {
 			event.Type = common.EventPhoto
 			event.Data = photos
+
+			if segments[0].(*onebot.ImageSegment).IsSticker {
+				event.Type = common.EventSticker
+				event.Data = photos[0]
+			}
 		} else {
 			event.Content = strings.Join(summary, "")
 
