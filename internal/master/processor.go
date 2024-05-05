@@ -494,7 +494,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				chat.id,
 				location.Latitude,
 				location.Longitude,
-				fmt.Sprintf("%s\n%s", chat.title, location.Name),
+				fmt.Sprintf("%s %s", chat.title, location.Name),
 				location.Address,
 				&gotgbot.SendVenueOpts{
 					MessageThreadId: chat.threadID,
@@ -553,7 +553,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				chat.id,
 				blob.Binary,
 				&gotgbot.SendVoiceOpts{
-					Caption:         chat.title,
+					Caption:         fmt.Sprintf("%s\n%s", chat.title, event.Content),
 					MessageThreadId: chat.threadID,
 					ReplyParameters: &gotgbot.ReplyParameters{
 						MessageId: replyToMessageID,
