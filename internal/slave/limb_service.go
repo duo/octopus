@@ -134,7 +134,7 @@ func (ls *LimbService) handleOnebotConnection(w http.ResponseWriter, r *http.Req
 
 	ls.observe(fmt.Sprintf("OnebotClient(%s) connected", vendor))
 
-	oc := NewOnebotClient(&vendor, ls.config, conn, ls.out)
+	oc := NewOnebotClient(&vendor, r.Header.Get("User-Agent"), ls.config, conn, ls.out)
 	ls.clientsLock.Lock()
 	ls.clients[vendor.String()] = oc
 	ls.clientsLock.Unlock()

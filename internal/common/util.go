@@ -44,8 +44,9 @@ var (
 			MaxIdleConns:        0,
 			MaxIdleConnsPerHost: 256,
 			TLSClientConfig: &tls.Config{
-				CipherSuites: tlsCipherSuites,
-				MinVersion:   tls.VersionTLS10,
+				CipherSuites:       tlsCipherSuites,
+				MinVersion:         tls.VersionTLS10,
+				InsecureSkipVerify: true,
 			},
 		},
 	}

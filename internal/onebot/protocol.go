@@ -182,6 +182,30 @@ func NewGroupForwardRequest(groupID int64, messageID int32) *Request {
 	}
 }
 
+// Lagrange.OneBot
+func NewUploadPrivateFileRequest(userID int64, file string, name string) *Request {
+	return &Request{
+		Action: "upload_private_file",
+		Params: map[string]interface{}{
+			"user_id": userID,
+			"file":    file,
+			"name":    name,
+		},
+	}
+}
+
+// Lagrange.OneBot
+func NewUploadGroupFileRequest(groupID int64, file string, name string) *Request {
+	return &Request{
+		Action: "upload_group_file",
+		Params: map[string]interface{}{
+			"group_id": groupID,
+			"file":     file,
+			"name":     name,
+		},
+	}
+}
+
 type Response struct {
 	Status  string `json:"status"`
 	Retcode int32  `json:"retcode"`
@@ -205,8 +229,10 @@ type GroupInfo struct {
 }
 
 type FileInfo struct {
-	File     string `json:"file" mapstructure:"file"`
-	FileName string `json:"file_name" mapstructure:"file_name"`
+	ID       string `json:"id,omitempty" mapstructure:"id,omitempty"`
+	Name     string `json:"name,omitempty" mapstructure:"name,omitempty"`
+	File     string `json:"file,omitempty" mapstructure:"file,omitempty"`
+	FileName string `json:"file_name,omitempty" mapstructure:"file_name,omitempty"`
 	URL      string `json:"url" mapstructure:"url"`
 	Base64   string `json:"base64,omitempty" mapstructure:"base64,omitempty"`
 	Data     []byte
@@ -229,6 +255,7 @@ const (
 	MessageGroup        EventType = "message_group"
 	MetaLifecycle       EventType = "meta_lifecycle"
 	MetaHeartbeat       EventType = "meta_heartbeat"
+	NoticeOfflineFile   EventType = "notice_offline_file"
 	NoticeGroupUpload   EventType = "notice_group_upload"
 	NoticeGroupAdmin    EventType = "notice_group_admin"
 	NoticeGroupDecrease EventType = "notice_group_decrease"
@@ -279,8 +306,8 @@ type Message struct {
 	Sender      Sender     `json:"sender" mapstructure:"sender"`
 }
 
-func (pm *Message) EventType() EventType {
-	if pm.MessageType == "private" {
+func (m *Message) EventType() EventType {
+	if m.MessageType == "private" {
 		return MessagePrivate
 	}
 	return MessageGroup
@@ -335,6 +362,21 @@ type Heartbeat struct {
 
 func (h *Heartbeat) EventType() EventType {
 	return MetaHeartbeat
+}
+
+type OfflineFile struct {
+	Event      `mapstructure:",squash"`
+	NoticeType string   `json:"notice_type" mapstructure:"notice_type"`
+	GroupID    int64    `json:"group_id" mapstructure:"group_id"`
+	UserID     int64    `json:"user_id" mapstructure:"user_id"`
+	File       FileInfo `json:"file" mapstructure:"file"`
+}
+
+func (of *OfflineFile) EventType() EventType {
+	if of.NoticeType == "offline_file" {
+		return NoticeOfflineFile
+	}
+	return NoticeGroupUpload
 }
 
 type GroupRecall struct {
@@ -705,7 +747,7 @@ func UnmarshalPayload(m map[string]interface{}) (Payload, error) {
 
 func unmarshalMessage(m map[string]interface{}) (Payload, error) {
 	var event Message
-	if err := mapstructure.Decode(m, &event); err != nil {
+	if err := mapstructure.WeakDecode(m, &event); err != nil {
 		return nil, err
 	}
 
@@ -721,11 +763,11 @@ func unmarshalMeta(m map[string]interface{}) (Payload, error) {
 	switch m["meta_event_type"] {
 	case "lifecycle":
 		var event LifeCycle
-		err := mapstructure.Decode(m, &event)
+		err := mapstructure.WeakDecode(m, &event)
 		return &event, err
 	case "heartbeat":
 		var event Heartbeat
-		err := mapstructure.Decode(m, &event)
+		err := mapstructure.WeakDecode(m, &event)
 		return &event, err
 	}
 
@@ -734,13 +776,17 @@ func unmarshalMeta(m map[string]interface{}) (Payload, error) {
 
 func unmarshalNotice(m map[string]interface{}) (Payload, error) {
 	switch m["notice_type"] {
+	case "offline_file", "group_upload":
+		var event OfflineFile
+		err := mapstructure.WeakDecode(m, &event)
+		return &event, err
 	case "group_recall":
 		var event GroupRecall
-		err := mapstructure.Decode(m, &event)
+		err := mapstructure.WeakDecode(m, &event)
 		return &event, err
 	case "friend_recall":
 		var event FriendRecall
-		err := mapstructure.Decode(m, &event)
+		err := mapstructure.WeakDecode(m, &event)
 		return &event, err
 	}
 
@@ -749,19 +795,19 @@ func unmarshalNotice(m map[string]interface{}) (Payload, error) {
 
 func unmarshalEvent(m map[string]interface{}) (Payload, error) {
 	var event Event
-	err := mapstructure.Decode(m, &event)
+	err := mapstructure.WeakDecode(m, &event)
 	return &event, err
 }
 
 func unmarshalRequest(m map[string]interface{}) (Payload, error) {
 	var event Request
-	err := mapstructure.Decode(m, &event)
+	err := mapstructure.WeakDecode(m, &event)
 	return &event, err
 }
 
 func unmarshalResponse(m map[string]interface{}) (Payload, error) {
 	var event Response
-	err := mapstructure.Decode(m, &event)
+	err := mapstructure.WeakDecode(m, &event)
 	return &event, err
 }
 
@@ -776,66 +822,66 @@ func generateSegments(d []interface{}, elements []Element) []ISegment {
 		switch s.(map[string]interface{})["type"].(string) {
 		case string(Text):
 			var segment TextSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Face):
 			var segment FaceSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(MarketFace):
 			var segment MarketFaceSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Image):
 			var segment ImageSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 			if elements[index].PicElement.Summary == "[动画表情]" {
 				segment.IsSticker = true
 			}
 		case string(Record):
 			var segment RecordSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Video):
 			var segment VideoSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(File):
 			var segment FileSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(At):
 			var segment AtSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Share):
 			var segment ShareSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Location):
 			var segment LocationSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Reply):
 			var segment ReplySegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Forward):
 			var segment ForwardSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(Node):
 			var segment NodeSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(XML):
 			var segment XMLSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		case string(JSON):
 			var segment JSONSegment
-			mapstructure.Decode(s, &segment)
+			mapstructure.WeakDecode(s, &segment)
 			segments = append(segments, &segment)
 		}
 	}

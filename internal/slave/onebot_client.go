@@ -22,8 +22,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	LAGRANGE_ONEBOT string = "Lagrange.OneBot"
+)
+
 type OnebotClient struct {
 	vendor *common.Vendor
+	agent  string
 	config *common.Configure
 
 	self    *onebot.FriendInfo
@@ -45,7 +50,7 @@ type OnebotClient struct {
 	mutex common.KeyMutex
 }
 
-func NewOnebotClient(vendor *common.Vendor, config *common.Configure, conn *websocket.Conn, out chan<- *common.OctopusEvent) *OnebotClient {
+func NewOnebotClient(vendor *common.Vendor, agent string, config *common.Configure, conn *websocket.Conn, out chan<- *common.OctopusEvent) *OnebotClient {
 	log.Infof("OnebotClient(%s) websocket connected", vendor)
 
 	m2s := filter.NewEventFilterChain(
@@ -59,6 +64,7 @@ func NewOnebotClient(vendor *common.Vendor, config *common.Configure, conn *webs
 
 	return &OnebotClient{
 		vendor:            vendor,
+		agent:             agent,
 		config:            config,
 		friends:           make(map[int64]*onebot.FriendInfo),
 		groups:            make(map[int64]*onebot.GroupInfo),
@@ -145,6 +151,11 @@ func (oc *OnebotClient) SendEvent(event *common.OctopusEvent) (*common.OctopusEv
 		binary := fmt.Sprintf("base64://%s", base64.StdEncoding.EncodeToString(blob.Binary))
 		segments = append(segments, onebot.NewRecord(binary))
 	case common.EventFile:
+		// TODO:
+		/*
+			if oc.agent == LAGRANGE_ONEBOT {
+			}
+		*/
 		blob := event.Data.(*common.BlobData)
 		binary := fmt.Sprintf("base64://%s", base64.StdEncoding.EncodeToString(blob.Binary))
 		segments = append(segments, onebot.NewFile(binary, blob.Name))
@@ -242,6 +253,10 @@ func (oc *OnebotClient) processEvent(event onebot.IEvent) {
 		oc.processGroupMessage(event.(*onebot.Message))
 	case onebot.MetaLifecycle:
 		oc.processMetaLifycycle(event.(*onebot.LifeCycle))
+	case onebot.NoticeOfflineFile:
+		oc.processOfflineFile(event.(*onebot.OfflineFile))
+	case onebot.NoticeGroupUpload:
+		oc.processGroupUpload(event.(*onebot.OfflineFile))
 	case onebot.NoticeGroupRecall:
 		oc.processGroupRecall(event.(*onebot.GroupRecall))
 	case onebot.NoticeFriendRecall:
@@ -262,6 +277,10 @@ func (oc *OnebotClient) getEventKey(event onebot.IEvent) string {
 		return common.Itoa(targetID)
 	case onebot.MessageGroup:
 		return common.Itoa(event.(*onebot.Message).GroupID)
+	case onebot.NoticeOfflineFile:
+		return common.Itoa(event.(*onebot.OfflineFile).UserID)
+	case onebot.NoticeGroupUpload:
+		return common.Itoa(event.(*onebot.OfflineFile).GroupID)
 	case onebot.NoticeGroupRecall:
 		return common.Itoa(event.(*onebot.GroupRecall).GroupID)
 	case onebot.NoticeFriendRecall:
@@ -272,6 +291,11 @@ func (oc *OnebotClient) getEventKey(event onebot.IEvent) string {
 }
 
 func (oc *OnebotClient) processPrivateMessage(m *onebot.Message) {
+	segments := m.Message.([]onebot.ISegment)
+	if len(segments) == 0 {
+		return
+	}
+
 	event := oc.generateEvent(fmt.Sprint(m.MessageID), m.Time)
 
 	targetID := m.Sender.UserID
@@ -294,10 +318,15 @@ func (oc *OnebotClient) processPrivateMessage(m *onebot.Message) {
 		Title: targetName,
 	}
 
-	oc.processMessage(event, m.Message.([]onebot.ISegment))
+	oc.processMessage(event, segments)
 }
 
 func (oc *OnebotClient) processGroupMessage(m *onebot.Message) {
+	segments := m.Message.([]onebot.ISegment)
+	if len(segments) == 0 {
+		return
+	}
+
 	event := oc.generateEvent(fmt.Sprint(m.MessageID), m.Time)
 
 	targetName := common.Itoa(m.GroupID)
@@ -463,6 +492,76 @@ func (oc *OnebotClient) processMetaLifycycle(m *onebot.LifeCycle) {
 	}
 }
 
+func (oc *OnebotClient) processOfflineFile(m *onebot.OfflineFile) {
+	// FIXME: can't get message id
+	event := oc.generateEvent(fmt.Sprint(time.Now().Unix()), time.Now().UnixMilli())
+
+	targetID := m.UserID
+	targetName := common.Itoa(targetID)
+	if target, ok := oc.friends[targetID]; ok {
+		targetName = cmp.Or(target.Remark, target.Nickname)
+	}
+
+	event.From = common.User{
+		ID:       common.Itoa(targetID),
+		Username: targetName,
+		Remark:   targetName,
+	}
+	event.Chat = common.Chat{
+		Type:  "private",
+		ID:    common.Itoa(targetID),
+		Title: targetName,
+	}
+
+	if bin, err := common.Download(m.File.URL); err != nil {
+		log.Warnf("Download file failed: %v", err)
+		event.Content = "[文件下载失败]"
+	} else {
+		bin.Name = m.File.Name
+		event.Type = common.EventFile
+		event.Data = bin
+	}
+
+	oc.pushEvent(event)
+}
+
+func (oc *OnebotClient) processGroupUpload(m *onebot.OfflineFile) {
+	// FIXME: can't get message id
+	event := oc.generateEvent(fmt.Sprint(time.Now().Unix()), time.Now().UnixMilli())
+
+	groupName := common.Itoa(m.GroupID)
+	if group, ok := oc.groups[m.GroupID]; ok {
+		groupName = group.Name
+	}
+
+	targetName := common.Itoa(m.UserID)
+	if member, err := oc.getGroupMemberInfo(m.GroupID, m.UserID, false); err == nil {
+		targetName = cmp.Or(member.Card, member.Nickname)
+	}
+
+	event.From = common.User{
+		ID:       common.Itoa(m.UserID),
+		Username: targetName,
+		Remark:   targetName,
+	}
+	event.Chat = common.Chat{
+		Type:  "group",
+		ID:    common.Itoa(m.GroupID),
+		Title: groupName,
+	}
+
+	if bin, err := common.Download(m.File.URL); err != nil {
+		log.Warnf("Download file failed: %v", err)
+		event.Content = "[文件下载失败]"
+	} else {
+		bin.Name = m.File.Name
+		event.Type = common.EventFile
+		event.Data = bin
+	}
+
+	oc.pushEvent(event)
+}
+
 func (oc *OnebotClient) processGroupRecall(m *onebot.GroupRecall) {
 	event := oc.generateEvent(fmt.Sprint(time.Now().Unix()), time.Now().UnixMilli())
 
@@ -540,7 +639,7 @@ func (oc *OnebotClient) getGroupMemberInfo(groupID, userID int64, noCache bool) 
 	resp, err := oc.request(onebot.NewGetGroupMemberInfoRequest(groupID, userID, noCache))
 	if err == nil {
 		var s onebot.Sender
-		err = mapstructure.Decode(resp, &s)
+		err = mapstructure.WeakDecode(resp, &s)
 		return &s, err
 	}
 
@@ -567,7 +666,7 @@ func (oc *OnebotClient) getMedia(t onebot.RequestType, file string) (*common.Blo
 		resp, err := oc.request(request)
 		if err == nil {
 			var f onebot.FileInfo
-			if err = mapstructure.Decode(resp, &f); err != nil {
+			if err = mapstructure.WeakDecode(resp, &f); err != nil {
 				return nil, err
 			}
 
@@ -600,7 +699,7 @@ func (oc *OnebotClient) getMsg(id int32) (*onebot.BareMessage, error) {
 	resp, err := oc.request(onebot.NewGetMsgRequest(id))
 	if err == nil {
 		var message onebot.BareMessage
-		err = mapstructure.Decode(resp, &message)
+		err = mapstructure.WeakDecode(resp, &message)
 		return &message, err
 	}
 
@@ -638,6 +737,18 @@ func (oc *OnebotClient) sendMsg(request *onebot.Request) (int64, error) {
 		return int64(resp.(map[string]interface{})["message_id"].(float64)), nil
 	}
 	return 0, err
+}
+
+// Lagrange.OneBot
+func (oc *OnebotClient) uploadPrivateFile(userID int64, file string, name string) error {
+	_, err := oc.request(onebot.NewUploadPrivateFileRequest(userID, file, name))
+	return err
+}
+
+// Lagrange.OneBot
+func (oc *OnebotClient) uploadGroupFile(groupID int64, file string, name string) error {
+	_, err := oc.request(onebot.NewUploadGroupFileRequest(groupID, file, name))
+	return err
 }
 
 func (oc *OnebotClient) convertForward(id string) *common.AppData {
@@ -728,7 +839,7 @@ func (oc *OnebotClient) updateChats() {
 
 		for _, friend := range resp.([]interface{}) {
 			var f onebot.FriendInfo
-			if err := mapstructure.Decode(friend.(map[string]interface{}), &f); err != nil {
+			if err := mapstructure.WeakDecode(friend.(map[string]interface{}), &f); err != nil {
 				continue
 			}
 			friends[f.ID] = &f
@@ -739,7 +850,7 @@ func (oc *OnebotClient) updateChats() {
 
 	if resp, err := oc.request(onebot.NewGetLoginInfoRequest()); err == nil {
 		var f onebot.FriendInfo
-		if err := mapstructure.Decode(resp.(map[string]interface{}), &f); err == nil {
+		if err := mapstructure.WeakDecode(resp.(map[string]interface{}), &f); err == nil {
 			oc.self = &f
 			oc.friends[f.ID] = &f
 		}
@@ -750,7 +861,7 @@ func (oc *OnebotClient) updateChats() {
 
 		for _, group := range resp.([]interface{}) {
 			var g onebot.GroupInfo
-			if err := mapstructure.Decode(group.(map[string]interface{}), &g); err != nil {
+			if err := mapstructure.WeakDecode(group.(map[string]interface{}), &g); err != nil {
 				continue
 			}
 			groups[g.ID] = &g
