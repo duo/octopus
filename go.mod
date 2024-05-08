@@ -11,7 +11,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/tidwall/gjson v1.17.1
-	github.com/wdvxdr1123/go-silk v0.0.0-20220304095002-f67345df09ea
+	github.com/youthlin/silk v0.0.4
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f
 	golang.org/x/net v0.24.0
 	gopkg.in/yaml.v3 v3.0.1

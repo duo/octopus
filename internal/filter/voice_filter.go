@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 
 	"github.com/duo/octopus/internal/common"
 
-	"github.com/wdvxdr1123/go-silk"
+	"github.com/youthlin/silk"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -70,7 +71,8 @@ func (f VoiceS2MFilter) Apply(event *common.OctopusEvent) *common.OctopusEvent {
 }
 
 func silk2ogg(rawData []byte) ([]byte, error) {
-	pcmData, err := silk.DecodeSilkBuffToPcm(rawData, sampleRate)
+	buf := bytes.NewBuffer(rawData)
+	pcmData, err := silk.Decode(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +144,12 @@ func ogg2silk(rawData []byte) ([]byte, error) {
 		}
 	}
 
-	wavData, err := os.ReadFile(wavFile.Name())
+	wavData, err := os.Open(wavFile.Name())
 	if err != nil {
 		return nil, err
 	}
 
-	silkData, err := silk.EncodePcmBuffToSilk(wavData, sampleRate, sampleRate, true)
+	silkData, err := silk.Encode(wavData, silk.Stx(true))
 	if err != nil {
 		return nil, err
 	}

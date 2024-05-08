@@ -55,6 +55,7 @@ func NewOnebotClient(vendor *common.Vendor, agent string, config *common.Configu
 
 	m2s := filter.NewEventFilterChain(
 		filter.StickerM2SFilter{},
+		filter.VoiceM2SFilter{},
 	)
 	s2m := filter.NewEventFilterChain(
 		filter.VoiceS2MFilter{},
