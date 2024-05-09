@@ -361,6 +361,16 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 			summary = append(summary, v.Content())
 		case *onebot.FaceSegment:
 			summary = append(summary, fmt.Sprintf("/[Face%s]", v.ID()))
+		case *onebot.MarketFaceSegment:
+			summary = append(summary, v.Content())
+			if v.URL() != "" {
+				if bin, err := common.Download(v.URL()); err != nil {
+					log.Warnf("Download market face failed: %v", err)
+				} else {
+					event.Type = common.EventSticker
+					event.Data = bin
+				}
+			}
 		case *onebot.AtSegment:
 			targetName := v.Target()
 

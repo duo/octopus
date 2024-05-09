@@ -509,6 +509,10 @@ func (s *MarketFaceSegment) Content() string {
 	return s.Data["summary"].(string)
 }
 
+func (s *MarketFaceSegment) URL() string {
+	return s.Data["url"].(string)
+}
+
 func (s *ImageSegment) File() string {
 	return s.Data["file"].(string)
 }

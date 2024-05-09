@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -88,16 +90,24 @@ func NextRandom() string {
 	return strconv.Itoa(int(Uint32()))
 }
 
-func Download(url string) (*BlobData, error) {
-	data, err := GetBytes(url)
+func Download(path string) (*BlobData, error) {
+	data, err := GetBytes(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return &BlobData{
+	blobData := &BlobData{
 		Mime:   mimetype.Detect(data).String(),
 		Binary: data,
-	}, nil
+	}
+
+	if u, err := url.Parse(path); err == nil {
+		if p, err := url.QueryUnescape(u.EscapedPath()); err == nil {
+			blobData.Name = filepath.Base(p)
+		}
+	}
+
+	return blobData, nil
 }
 
 func GetBytes(url string) ([]byte, error) {
