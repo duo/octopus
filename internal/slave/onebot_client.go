@@ -413,12 +413,22 @@ func (oc *OnebotClient) processMessage(event *common.OctopusEvent, segments []on
 				event.Data = bin
 			}
 		case *onebot.VideoSegment:
-			if bin, err := oc.getMedia(onebot.GetFile, v.FileID()); err != nil {
-				log.Warnf("Download video failed: %v", err)
-				event.Content = "[视频下载失败]"
+			if v.URL() == "" {
+				if bin, err := oc.getMedia(onebot.GetFile, v.FileID()); err != nil {
+					log.Warnf("Download video by GetFile failed: %v", err)
+					event.Content = "[视频下载失败]"
+				} else {
+					event.Type = common.EventVideo
+					event.Data = bin
+				}
 			} else {
-				event.Type = common.EventVideo
-				event.Data = bin
+				if bin, err := common.Download(v.URL()); err != nil {
+					log.Warnf("Download video by URL failed: %v", err)
+					event.Content = "[视频下载失败]"
+				} else {
+					event.Type = common.EventVideo
+					event.Data = bin
+				}
 			}
 		case *onebot.ReplySegment:
 			event.Reply = &common.ReplyInfo{

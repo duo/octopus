@@ -525,6 +525,10 @@ func (s *RecordSegment) File() string {
 	return s.Data["file"].(string)
 }
 
+func (s *VideoSegment) URL() string {
+	return s.Data["url"].(string)
+}
+
 func (s *VideoSegment) File() string {
 	return s.Data["file"].(string)
 }
