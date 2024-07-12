@@ -4,16 +4,16 @@ go 1.22
 
 require (
 	github.com/Benau/tgsconverter v0.0.0-20210809170556-99f4a4f6337f
-	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.27
+	github.com/PaulSonOfLars/gotgbot/v2 v2.0.0-rc.28
 	github.com/PuerkitoBio/goquery v1.9.2
 	github.com/gabriel-vasile/mimetype v1.4.4
-	github.com/gorilla/websocket v1.5.2
+	github.com/gorilla/websocket v1.5.3
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/tidwall/gjson v1.17.1
 	github.com/youthlin/silk v0.0.4
-	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
-	golang.org/x/net v0.26.0
+	golang.org/x/exp v0.0.0-20240707233637-46b078467d37
+	golang.org/x/net v0.27.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.30.1
 )
@@ -32,9 +32,9 @@ require (
 	github.com/sizeofint/webpanimation v0.0.0-20210809145948-1d2b32119882 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/sys v0.22.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240304020402-f0dba7c97c2b // indirect
-	modernc.org/libc v1.53.1 // indirect
+	modernc.org/libc v1.54.4 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect

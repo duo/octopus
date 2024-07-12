@@ -551,7 +551,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			blob := event.Data.(*common.BlobData)
 			resp, err := ms.bot.SendVoice(
 				chat.id,
-				blob.Binary,
+				gotgbot.InputFileByReader(blob.Name, bytes.NewReader(blob.Binary)),
 				&gotgbot.SendVoiceOpts{
 					Caption:         fmt.Sprintf("%s\n%s", chat.title, event.Content),
 					MessageThreadId: chat.threadID,
@@ -573,7 +573,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 				//	File:     bytes.NewReader(blob.Binary),
 				//	FileName: fileName,
 				//},
-				blob.Binary,
+				gotgbot.InputFileByReader(blob.Name, bytes.NewReader(blob.Binary)),
 				&gotgbot.SendVideoOpts{
 					Caption:         text,
 					MessageThreadId: chat.threadID,
@@ -588,10 +588,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			blob := event.Data.(*common.BlobData)
 			resp, err := ms.bot.SendDocument(
 				chat.id,
-				&gotgbot.NamedFile{
-					File:     bytes.NewReader(blob.Binary),
-					FileName: blob.Name,
-				},
+				gotgbot.InputFileByReader(blob.Name, bytes.NewReader(blob.Binary)),
 				&gotgbot.SendDocumentOpts{
 					Caption:         chat.title,
 					MessageThreadId: chat.threadID,
@@ -606,10 +603,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 			if strings.HasSuffix(blob.Mime, "png") || strings.HasSuffix(blob.Mime, "webp") {
 				resp, err := ms.bot.SendSticker(
 					chat.id,
-					&gotgbot.NamedFile{
-						File:     bytes.NewReader(blob.Binary),
-						FileName: blob.Name,
-					},
+					gotgbot.InputFileByReader(blob.Name, bytes.NewReader(blob.Binary)),
 					&gotgbot.SendStickerOpts{
 						MessageThreadId: chat.threadID,
 						ReplyParameters: &gotgbot.ReplyParameters{
@@ -647,10 +641,7 @@ func (ms *MasterService) processSlaveEvent(event *common.OctopusEvent) {
 					}
 
 					mediaGroup = append(mediaGroup, gotgbot.InputMediaPhoto{
-						Media: &gotgbot.NamedFile{
-							File:     bytes.NewReader(photo.Binary),
-							FileName: photo.Name,
-						},
+						Media:   gotgbot.InputFileByReader(photo.Name, bytes.NewReader(photo.Binary)),
 						Caption: caption,
 					})
 				}
@@ -714,10 +705,7 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 	if mime.String() == "image/gif" {
 		resp, err := ms.bot.SendAnimation(
 			chat.id,
-			&gotgbot.NamedFile{
-				File:     bytes.NewReader(photo.Binary),
-				FileName: photo.Name + ".gif",
-			},
+			gotgbot.InputFileByReader(photo.Name+".gif", bytes.NewReader(photo.Binary)),
 			&gotgbot.SendAnimationOpts{
 				Caption:         text,
 				MessageThreadId: chat.threadID,
@@ -730,10 +718,7 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 	} else if isSendAsFile(photo.Binary) {
 		resp, err := ms.bot.SendDocument(
 			chat.id,
-			&gotgbot.NamedFile{
-				File:     bytes.NewReader(photo.Binary),
-				FileName: photo.Name,
-			},
+			gotgbot.InputFileByReader(photo.Name, bytes.NewReader(photo.Binary)),
 			&gotgbot.SendDocumentOpts{
 				Caption:         text,
 				MessageThreadId: chat.threadID,
@@ -746,7 +731,7 @@ func (ms *MasterService) sendPhoto(chat *ChatInfo, replyToMessageID int64, photo
 	} else {
 		resp, err := ms.bot.SendPhoto(
 			chat.id,
-			photo.Binary,
+			gotgbot.InputFileByReader(photo.Name, bytes.NewReader(photo.Binary)),
 			&gotgbot.SendPhotoOpts{
 				Caption:         text,
 				MessageThreadId: chat.threadID,
